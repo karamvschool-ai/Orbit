@@ -38,9 +38,9 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
   let frame = 0, destroyed = false, phase = 0, lastTime = 0, energy = 0, pressStrength = 0;
   const pointer = { x: 0, y: 0, clientX: null, clientY: null, targetX: 0, targetY: 0, presence: 0, targetPresence: 0 };
   const satellites = [
-    { a: 178, b: 125, tilt: 35 * Math.PI / 180, angle: 3.294, period: 20, direction: 1, radius: 11.4 },
-    { a: 192, b: 135, tilt: -27 * Math.PI / 180, angle: 3.062, period: 20, direction: 1, radius: 12.1 },
-    { a: 150, b: 110, tilt: 17 * Math.PI / 180, angle: .435, period: 20, direction: 1, radius: 12 },
+    { a: 192, b: 139, tilt: 35 * Math.PI / 180, angle: 3.294, period: 20, direction: 1, radius: 11.4 },
+    { a: 206, b: 149, tilt: -27 * Math.PI / 180, angle: 3.062, period: 20, direction: 1, radius: 12.1 },
+    { a: 164, b: 124, tilt: 17 * Math.PI / 180, angle: .435, period: 20, direction: 1, radius: 12 },
   ];
   const particles = Array.from({ length: 225 }, (_, i) => ({
     angle: random() * TAU,
@@ -300,7 +300,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     pointer.x = pointer.targetX;
     pointer.y = pointer.targetY;
     pointer.presence = getInteraction() ? pointer.targetPresence : 0;
-    const coreProximity = clamp((133 - Math.hypot(pointer.x, pointer.y)) / 27, 0, 1);
+    const coreProximity = clamp((147 - Math.hypot(pointer.x, pointer.y)) / 27, 0, 1);
     pressStrength = coreProximity * pointer.presence;
     energy = mix(energy,clamp(Number(getEnergy()) || 0,0,1),presenceFade);
     ctx.setTransform(dpr,0,0,dpr,0,0);

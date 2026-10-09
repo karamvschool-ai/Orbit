@@ -20,6 +20,9 @@
       <symbol id="i-send" viewBox="0 0 24 24"><path d="m21 3-7 18-3-8-8-3 18-7ZM11 13 21 3"/></symbol>
       <symbol id="i-wave" viewBox="0 0 24 24"><path d="M2 10v4M7 6v12M12 2v20M17 6v12M22 10v4"/></symbol>
       <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5M3 3l6 6M21 3l-6 6M3 21l6-6M21 21l-6-6"/></symbol>
+      <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M3 8h5V3M21 8h-5V3M8 21v-5H3M16 21v-5h5M3 3l5 5M21 3l-5 5M3 21l5-5M21 21l-5-5"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
       <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
       <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
       <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H5a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9zM14 2v7h7M7 14h10M7 18h7"/></symbol>
@@ -70,9 +73,10 @@
           <button id="use-example" type="button"><svg class="icon"><use href="#i-plus"/></svg> Try an example</button>
           <p>Files stay on this device.</p>
         </div>
-        <input id="file-input" type="file" multiple hidden />
         <div id="attachment-chip" class="attachment-chip glass" hidden><svg class="icon"><use href="#i-file"/></svg><span id="attachment-name"></span><button type="button" id="remove-attachment" aria-label="Remove attachment"><svg class="icon"><use href="#i-close"/></svg></button></div>
       </form>
+
+      <input id="file-input" type="file" multiple hidden />
 
       <aside class="task-panel glass" id="task-panel" aria-label="Tasks">
         <header class="task-header"><h1>Tasks</h1><button class="plain-button" id="close-tasks" aria-label="Close tasks"><svg class="icon"><use href="#i-close"/></svg></button></header>

@@ -10,6 +10,11 @@ let toastTimer;
 let attachedFiles = [];
 let activePopover = null;
 let panelInvoker = null;
+let activePage = 'home';
+let pageExpanded = false;
+let conversationQuery = '';
+let fileQuery = '';
+let selectedConversation = 'Make me a summary of my research notes.';
 const overlays = [];
 const mobileQuery = matchMedia('(max-width: 900px)');
 const compactInputQuery = matchMedia('(max-width: 550px)');
@@ -22,7 +27,7 @@ const conversations = [
 const scene = createSingularity($('#singularity'), {
   getEnergy: () => energy,
   getMotion: () => settings.motion,
-  getInteraction: () => settings.interaction,
+  getInteraction: () => settings.interaction && !pageExpanded,
   getState: () => voicePreview ? 'listening' : energy > .7 ? 'thinking' : 'idle',
 });
 
@@ -124,6 +129,7 @@ function demoPrompt(text, method = 'text') {
   closePopovers();
   if (voicePreview) setVoice(false);
   $('#current-request').textContent = text;
+  selectedConversation = text;
   $('#request-method use').setAttribute('href', method === 'voice' ? '#i-wave' : '#i-keyboard');
   $('#request-status').textContent = 'Working on your request...';
   $('#status-ring').classList.remove('ready');
@@ -183,16 +189,26 @@ $('#use-example').addEventListener('click', () => {
   $('#message-input').focus();
 });
 $('#file-input').addEventListener('change', (event) => {
-  attachedFiles = Array.from(event.target.files);
-  $('#attachment-chip').hidden = attachedFiles.length === 0;
-  $('#attachment-name').textContent = attachedFiles.length === 1 ? attachedFiles[0].name : `${attachedFiles.length} files attached`;
-  toast(attachedFiles.length === 1 ? 'File added to your workspace.' : `${attachedFiles.length} files added to your workspace.`);
-  if ($('.nav-button[data-panel=workspace]').classList.contains('active')) openPanel('workspace');
+  const added = Array.from(event.target.files);
+  if (!added.length) return;
+  attachedFiles.push(...added);
+  updateAttachmentChip();
+  $('#file-input').value = '';
+  fileQuery = '';
+  selectedWorkspaceFile = workspaceFiles().at(-1).id;
+  toast(added.length === 1 ? 'File added to your workspace.' : `${added.length} files added to your workspace.`);
+  if (activePage === 'workspace') {
+    openPanel('workspace');
+    ($(`.file-card[data-file="${selectedWorkspaceFile}"]`) || $('#workspace-add-files')).focus({ preventScroll: true });
+  }
 });
 $('#remove-attachment').addEventListener('click', () => {
   attachedFiles = [];
   $('#file-input').value = '';
-  $('#attachment-chip').hidden = true;
+  selectedWorkspaceFile = exampleFiles[0].id;
+  updateAttachmentChip();
+  if (activePage === 'workspace') openPanel('workspace');
+  $('#attach-button').focus({ preventScroll: true });
 });
 $('#copy-response').addEventListener('click', async () => {
   closePopovers({ restoreFocus: true });
@@ -213,8 +229,8 @@ function setTasks(open, { restoreFocus = false } = {}) {
   tasksOpen = open;
   panel.classList.toggle('is-closed', !open);
   panel.classList.toggle('mobile-open', mobile && open);
-  panel.inert = !open;
-  panel.setAttribute('aria-hidden', String(!open));
+  panel.inert = pageExpanded || !open;
+  panel.setAttribute('aria-hidden', String(pageExpanded || !open));
   toggle.hidden = !mobile && open;
   toggle.classList.toggle('visible', !open && !mobile);
   toggle.setAttribute('aria-expanded', String(open));
@@ -249,24 +265,388 @@ document.querySelectorAll('.task-row').forEach((row) => {
   });
 });
 
+function icon(symbol, className = 'icon') {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', className);
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', `#i-${symbol}`);
+  svg.append(use);
+  return svg;
+}
+
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function actionButton(text, symbol, className, action) {
+  const button = element('button', className);
+  button.type = 'button';
+  if (symbol) button.append(icon(symbol));
+  button.append(element('span', '', text));
+  button.addEventListener('click', action);
+  return button;
+}
+
+function syncExpandedPage() {
+  $('.orbit-app').classList.toggle('is-page-open', pageExpanded);
+  $('#side-panel').classList.toggle('is-expanded', pageExpanded);
+  for (const selector of ['.request-island', '.response-island', '#composer', '.orbit-wordmark', '#singularity']) {
+    const node = $(selector);
+    node.inert = pageExpanded;
+    node.setAttribute('aria-hidden', String(pageExpanded));
+  }
+  $('#task-panel').inert = pageExpanded || !tasksOpen;
+  $('#task-panel').setAttribute('aria-hidden', String(pageExpanded || !tasksOpen));
+  $('#restore-tasks').inert = pageExpanded;
+  $('#restore-tasks').setAttribute('aria-hidden', String(pageExpanded));
+  const nav = $('.navigation');
+  const navHadFocus = nav.contains(document.activeElement);
+  nav.inert = pageExpanded && compactInputQuery.matches;
+  nav.setAttribute('aria-hidden', String(pageExpanded && compactInputQuery.matches));
+  if (nav.inert && navHadFocus) $('#panel-expand')?.focus({ preventScroll: true });
+}
+compactInputQuery.addEventListener('change', syncExpandedPage);
+
+function setPanelExpanded(expanded) {
+  closePopovers();
+  openPanel(activePage, { expanded });
+  $('#panel-expand').focus({ preventScroll: true });
+}
+
 function panelHeader(title) {
-  const header = document.createElement('div');
-  header.className = 'panel-header';
-  const heading = document.createElement('h2');
-  heading.textContent = title;
-  const button = document.createElement('button');
-  button.className = 'plain-button';
-  button.setAttribute('aria-label', `Close ${title.toLowerCase()}`);
-  button.innerHTML = '<svg class="icon"><use href="#i-close"/></svg>';
-  button.addEventListener('click', () => openPanel('home', { restoreFocus: true }));
-  header.append(heading, button);
+  const header = element('header', 'panel-header');
+  const heading = element('div', 'panel-heading');
+  if (pageExpanded) heading.append(element('span', 'panel-eyebrow', 'ORBIT / YOUR SPACE'));
+  const titleNode = element('h2', '', title);
+  titleNode.id = 'panel-title';
+  heading.append(titleNode);
+  const actions = element('div', 'panel-header-actions');
+  const expand = actionButton(pageExpanded ? 'Quick view' : 'Expand', pageExpanded ? 'collapse' : 'expand', 'plain-button expand-button', () => setPanelExpanded(!pageExpanded));
+  expand.id = 'panel-expand';
+  expand.setAttribute('aria-label', `${pageExpanded ? 'Collapse' : 'Expand'} ${title.toLowerCase()}`);
+  expand.setAttribute('aria-expanded', String(pageExpanded));
+  expand.setAttribute('aria-controls', 'panel-body');
+  expand.title = pageExpanded ? 'Return to quick view' : 'Open full page';
+  const close = actionButton('Close', 'close', 'plain-button panel-close', () => openPanel('home', { restoreFocus: true }));
+  close.setAttribute('aria-label', `Close ${title.toLowerCase()}`);
+  actions.append(expand, close);
+  header.append(heading, actions);
   return header;
 }
 
-function openPanel(name, { restoreFocus = false } = {}) {
+function intro(title, description) {
+  const section = element('div', 'page-intro');
+  section.append(element('h3', '', title), element('p', '', description));
+  return section;
+}
+
+function searchField(label, value, onInput) {
+  const field = element('label', 'page-search');
+  field.append(icon('search'));
+  const input = element('input');
+  input.type = 'search';
+  input.placeholder = label;
+  input.setAttribute('aria-label', label);
+  input.value = value;
+  input.addEventListener('input', () => onInput(input.value));
+  field.append(input);
+  return field;
+}
+
+function beginMessage(text = '') {
+  openPanel('home');
+  $('#message-input').value = text;
+  $('#message-input').focus({ preventScroll: true });
+}
+
+function selectedConversationItem() {
+  return conversations.find(item => item.prompt === selectedConversation) || conversations[0];
+}
+
+function renderConversationDetail() {
+  const detail = $('.conversation-detail');
+  if (!detail) return;
+  const item = selectedConversationItem();
+  detail.replaceChildren();
+  const header = element('div', 'detail-header');
+  header.append(element('small', '', `${item.time} · Conversation`), element('h3', '', item.title));
+  const thread = element('div', 'detail-thread');
+  const request = element('div', 'thread-message is-user');
+  request.append(element('span', 'message-label', 'YOU'), element('p', '', item.prompt));
+  const response = element('div', 'thread-message is-assistant');
+  response.append(element('span', 'message-label', 'ORBIT'), element('p', '', replyFor(item.prompt)));
+  thread.append(request, response);
+  const footer = element('div', 'detail-footer');
+  footer.append(actionButton('Continue conversation', 'arrow', 'page-secondary', () => beginMessage(item.prompt)));
+  detail.append(header, thread, footer);
+}
+
+function renderConversationCards() {
+  const list = $('.conversation-list');
+  if (!list) return;
+  list.replaceChildren();
+  const query = conversationQuery.trim().toLowerCase();
+  const matches = conversations.filter(item => `${item.title} ${item.prompt}`.toLowerCase().includes(query));
+  if (!matches.length) {
+    list.append(element('div', 'page-empty', 'No conversations found. Try another search.'));
+    return;
+  }
+  matches.forEach(item => {
+    const button = element('button', 'conversation-card');
+    button.type = 'button';
+    button.dataset.prompt = item.prompt;
+    button.classList.toggle('active', selectedConversationItem().prompt === item.prompt);
+    button.setAttribute('aria-pressed', String(selectedConversationItem().prompt === item.prompt));
+    const mark = element('span', 'conversation-icon');
+    mark.append(icon('chat'));
+    const copy = element('span', 'conversation-copy');
+    copy.append(element('strong', '', item.title), element('p', '', item.prompt), element('small', '', item.time));
+    button.append(mark, copy, icon('arrow', 'icon conversation-arrow'));
+    button.addEventListener('click', () => {
+      selectedConversation = item.prompt;
+      list.querySelectorAll('.conversation-card').forEach(card => {
+        const selected = card.dataset.prompt === selectedConversation;
+        card.classList.toggle('active', selected);
+        card.setAttribute('aria-pressed', String(selected));
+      });
+      renderConversationDetail();
+    });
+    list.append(button);
+  });
+}
+
+function renderConversations(body) {
+  if (!pageExpanded) {
+    conversations.forEach(item => {
+      const button = element('button', 'conversation-item');
+      const copy = element('span');
+      copy.append(element('strong', '', item.title), element('small', '', item.time));
+      button.append(icon('chat'), copy);
+      button.addEventListener('click', () => { demoPrompt(item.prompt); openPanel('home', { restoreFocus: true }); });
+      body.append(button);
+    });
+    return;
+  }
+  body.append(intro('Pick up a thought.', 'A little room for the things you’re exploring.'));
+  const toolbar = element('div', 'page-toolbar');
+  toolbar.append(searchField('Search conversations', conversationQuery, value => { conversationQuery = value; renderConversationCards(); }),
+    actionButton('New conversation', 'plus', 'page-primary', () => beginMessage()));
+  const layout = element('div', 'conversation-layout');
+  const index = element('section', 'conversation-index');
+  index.setAttribute('aria-label', 'Conversation list');
+  index.append(element('div', 'conversation-list'));
+  const detail = element('section', 'conversation-detail');
+  detail.setAttribute('aria-label', 'Selected conversation');
+  detail.setAttribute('aria-live', 'polite');
+  layout.append(index, detail);
+  body.append(toolbar, layout);
+  renderConversationCards();
+  renderConversationDetail();
+}
+
+const exampleFiles = [
+  { id: 'example-research', name: 'Research notes.pdf', type: 'PDF', label: 'Research · Example', title: 'Research notes', content: ['A few threads worth following.', 'The strongest ideas connect a clear question with a small, observable experiment. Start with the problems that appear repeatedly in your notes.', 'Key points', 'Keep the original question visible.', 'Group related observations before drawing conclusions.', 'Turn each promising idea into a simple next step.'] },
+  { id: 'example-project', name: 'Project outline.md', type: 'MD', label: 'Planning · Example', title: 'Project outline', content: ['A quiet, personal assistant.', 'Orbit brings your thoughts, files, and plans into one calm space.', 'Next steps', 'Make the core interactions feel natural.', 'Give conversations and files room to breathe.', 'Keep the interface simple and focused.'] },
+  { id: 'example-reading', name: 'Reading list.txt', type: 'TXT', label: 'Reading · Example', title: 'Reading list', content: ['Something to get curious about.', 'A short collection of topics to return to when there’s room to explore.', 'On the list', 'Human-centered interfaces', 'Creative routines and focused work', 'Patterns in natural motion'] },
+];
+const fileIds = new WeakMap();
+let fileIdSequence = 0;
+let selectedWorkspaceFile = exampleFiles[0].id;
+let previewSequence = 0;
+
+function workspaceFiles() {
+  return [...exampleFiles, ...attachedFiles.map(file => {
+    if (!fileIds.has(file)) fileIds.set(file, `local-${++fileIdSequence}`);
+    const extension = file.name.split('.').pop();
+    const type = file.name.includes('.') ? extension.toUpperCase().slice(0, 5) : 'FILE';
+    const size = file.size < 1024 ? `${file.size} B` : file.size < 1048576 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / 1048576).toFixed(1)} MB`;
+    return { id: fileIds.get(file), name: file.name, type, label: `${size} · On this device`, title: file.name, file };
+  })];
+}
+
+function updateAttachmentChip() {
+  $('#attachment-chip').hidden = !attachedFiles.length;
+  $('#attachment-name').textContent = attachedFiles.length === 1 ? attachedFiles[0].name : `${attachedFiles.length} files attached`;
+}
+
+async function renderFilePreview() {
+  const detail = $('.workspace-detail');
+  if (!detail) return;
+  const files = workspaceFiles();
+  const item = files.find(file => file.id === selectedWorkspaceFile) || files[0];
+  selectedWorkspaceFile = item.id;
+  const sequence = ++previewSequence;
+  detail.replaceChildren();
+  const preview = element('div', 'file-preview');
+  preview.append(element('small', '', item.file ? item.label : 'EXAMPLE DOCUMENT'), element('h3', '', item.title));
+  detail.append(preview);
+  if (item.content) {
+    preview.append(element('p', '', item.content[0]), element('p', '', item.content[1]), element('h4', '', item.content[2]));
+    const list = element('ul');
+    item.content.slice(3).forEach(text => list.append(element('li', '', text)));
+    preview.append(list);
+  } else if (item.file.size > 2 * 1048576) {
+    preview.append(element('p', 'workspace-note', 'This file is attached. Text previews are available for files up to 2 MB.'));
+  } else if (/\.(txt|md|csv|json|log)$/i.test(item.name) || item.file.type.startsWith('text/')) {
+    const text = element('pre', 'file-preview-text', 'Opening your file…');
+    preview.append(text);
+    try {
+      const content = await item.file.text();
+      if (sequence !== previewSequence || !text.isConnected) return;
+      text.textContent = content.slice(0, 16000) || 'This file is empty.';
+      if (content.length > 16000) preview.append(element('p', 'workspace-note', 'Showing the first 16,000 characters.'));
+    } catch { text.textContent = 'This file could not be previewed.'; }
+  } else {
+    preview.append(element('p', 'workspace-note', 'Your file is attached and ready to use in a message. A text preview is not available for this file type.'));
+  }
+  const footer = element('div', 'detail-footer');
+  footer.append(actionButton('Use in a message', 'arrow', 'page-secondary', () => beginMessage(`Help me review ${item.name}.`)));
+  if (item.file) footer.append(actionButton('Remove file', null, 'file-remove', () => {
+    attachedFiles = attachedFiles.filter(file => file !== item.file);
+    $('#file-input').value = '';
+    updateAttachmentChip();
+    selectedWorkspaceFile = exampleFiles[0].id;
+    renderFileCards();
+    renderFilePreview();
+    ($('.file-card') || $('.page-search input')).focus({ preventScroll: true });
+  }));
+  detail.append(footer);
+}
+
+function renderFileCards() {
+  const grid = $('.file-grid');
+  if (!grid) return;
+  grid.replaceChildren();
+  const query = fileQuery.trim().toLowerCase();
+  const matches = workspaceFiles().filter(file => `${file.name} ${file.type}`.toLowerCase().includes(query));
+  if (!matches.length) {
+    grid.append(element('div', 'page-empty', 'No files found. Try another search or add a file.'));
+    return;
+  }
+  matches.forEach(file => {
+    const card = element('button', 'file-card');
+    card.type = 'button';
+    card.dataset.file = file.id;
+    card.classList.toggle('active', file.id === selectedWorkspaceFile);
+    card.setAttribute('aria-pressed', String(file.id === selectedWorkspaceFile));
+    const mark = element('span', 'file-icon');
+    mark.append(icon('file'));
+    const copy = element('span', 'file-info');
+    copy.append(element('strong', '', file.name), element('small', '', file.label));
+    card.append(mark, copy, element('span', 'file-badge', file.type));
+    card.addEventListener('click', () => {
+      selectedWorkspaceFile = file.id;
+      grid.querySelectorAll('.file-card').forEach(button => {
+        const selected = button.dataset.file === file.id;
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-pressed', String(selected));
+      });
+      renderFilePreview();
+    });
+    grid.append(card);
+  });
+}
+
+function renderWorkspace(body) {
+  const addFiles = actionButton('Add files', 'plus', pageExpanded ? 'page-primary' : 'panel-action', () => $('#file-input').click());
+  addFiles.id = 'workspace-add-files';
+  if (!pageExpanded) {
+    body.append(element('p', 'panel-caption', 'A little space for the things you’re working on.'));
+    workspaceFiles().forEach(file => {
+      const row = element('div', 'workspace-file');
+      row.append(icon('file'), element('span', '', file.name));
+      body.append(row);
+    });
+    body.append(addFiles);
+    return;
+  }
+  body.append(intro('Room for your ideas.', 'Notes, outlines, and the things that make a thought clearer.'));
+  const toolbar = element('div', 'page-toolbar');
+  toolbar.append(searchField('Search files', fileQuery, value => { fileQuery = value; renderFileCards(); }),
+    addFiles);
+  const layout = element('div', 'workspace-layout');
+  layout.append(element('section', 'file-grid'), element('section', 'workspace-detail'));
+  layout.firstChild.setAttribute('aria-label', 'Workspace files');
+  layout.lastChild.setAttribute('aria-label', 'Selected file preview');
+  body.append(toolbar, layout, element('p', 'workspace-note', 'Files you add stay on this device.'));
+  renderFileCards();
+  renderFilePreview();
+}
+
+function settingControl(setting) {
+  const row = element('div', 'setting-row');
+  const copy = element('span', '', setting.label);
+  copy.append(element('small', '', setting.description));
+  const button = element('button', 'switch');
+  button.type = 'button';
+  button.setAttribute('role', 'switch');
+  button.setAttribute('aria-label', setting.label);
+  button.setAttribute('aria-checked', String(settings[setting.key]));
+  button.addEventListener('click', () => {
+    settings[setting.key] = !settings[setting.key];
+    button.setAttribute('aria-checked', String(settings[setting.key]));
+    updateSettingsPreview();
+  });
+  row.append(copy, button);
+  return row;
+}
+
+function updateSettingsPreview() {
+  const preview = $('.settings-preview');
+  if (!preview) return;
+  preview.dataset.motion = String(settings.motion);
+  preview.querySelector('.preview-motion-status').textContent = settings.motion ? 'Ambient motion is on' : 'Ambient motion is paused';
+  preview.querySelector('.preview-interaction-status').textContent = settings.interaction ? 'Cursor gravity is on' : 'Cursor gravity is off';
+}
+
+function renderSettings(body) {
+  const controls = [
+    { key: 'motion', label: 'Ambient motion', description: 'Let the singularity drift' },
+    { key: 'interaction', label: 'Cursor gravity', description: 'Bend the space around you' },
+  ];
+  if (!pageExpanded) {
+    body.append(element('p', 'panel-caption', 'Make this space feel like yours.'));
+    controls.forEach(setting => body.append(settingControl(setting)));
+    const hint = element('p', 'keyboard-hint');
+    hint.append(document.createTextNode('Press '), element('kbd', '', '/'), document.createTextNode(' to start a thought.'));
+    body.append(hint);
+    return;
+  }
+  body.append(intro('Make space feel like you.', 'A few thoughtful controls for a calmer orbit.'));
+  const layout = element('div', 'settings-layout');
+  const column = element('div', 'settings-controls');
+  const motion = element('section', 'settings-card');
+  motion.append(element('h3', '', 'Singularity'), element('p', '', 'Choose how your space moves and responds.'));
+  controls.forEach(setting => motion.append(settingControl(setting)));
+  const shortcuts = element('section', 'settings-card settings-shortcuts');
+  shortcuts.append(element('h3', '', 'A little quicker'), element('p', '', 'Keep your hands on a thought.'));
+  for (const [key, label] of [['/', 'Start a message'], ['Esc', 'Return to quick view'], ['Tab', 'Move between controls']]) {
+    const row = element('div', 'shortcut-row');
+    row.append(element('span', '', label), element('kbd', '', key));
+    shortcuts.append(row);
+  }
+  column.append(motion, shortcuts);
+  const preview = element('section', 'settings-preview');
+  preview.setAttribute('aria-label', 'Singularity preferences preview');
+  const orbital = element('div', 'preview-orbit');
+  orbital.setAttribute('aria-hidden', 'true');
+  orbital.append(element('span'), element('span'), element('span'));
+  preview.append(element('small', 'panel-eyebrow', 'YOUR ORBIT'), orbital, element('h3', '', 'A quiet kind of energy.'), element('p', 'preview-motion-status'), element('p', 'preview-interaction-status'));
+  layout.append(column, preview);
+  body.append(layout);
+  updateSettingsPreview();
+}
+
+function openPanel(name, { restoreFocus = false, expanded = pageExpanded } = {}) {
   const panel = $('#side-panel');
   const invoker = panelInvoker;
-  document.querySelectorAll('.nav-button').forEach((button) => {
+  activePage = name;
+  pageExpanded = name !== 'home' && expanded;
+  document.querySelectorAll('.nav-button').forEach(button => {
     const active = button.dataset.panel === name;
     button.classList.toggle('active', active);
     button.setAttribute('aria-pressed', String(active));
@@ -274,9 +654,11 @@ function openPanel(name, { restoreFocus = false } = {}) {
   });
   panel.replaceChildren();
   panel.hidden = name === 'home';
+  panel.dataset.page = name;
   if (name === 'home') {
     forgetOverlay('panel');
     panelInvoker = null;
+    syncExpandedPage();
     if (restoreFocus && invoker) invoker.focus({ preventScroll: true });
     return;
   }
@@ -284,61 +666,17 @@ function openPanel(name, { restoreFocus = false } = {}) {
   rememberOverlay('panel');
   const title = name.charAt(0).toUpperCase() + name.slice(1);
   panel.setAttribute('aria-label', title);
+  panel.setAttribute('aria-labelledby', 'panel-title');
   panel.append(panelHeader(title));
-  if (name === 'conversations') {
-    conversations.forEach((item) => {
-      const button = document.createElement('button');
-      button.className = 'conversation-item';
-      button.innerHTML = '<svg class="icon"><use href="#i-chat"/></svg><span><strong></strong><small></small></span>';
-      button.querySelector('strong').textContent = item.title;
-      button.querySelector('small').textContent = item.time;
-      button.addEventListener('click', () => { demoPrompt(item.prompt); openPanel('home', { restoreFocus: true }); });
-      panel.append(button);
-    });
-  }
-  if (name === 'workspace') {
-    const caption = document.createElement('p');
-    caption.className = 'panel-caption';
-    caption.textContent = 'A little space for the things you’re working on.';
-    panel.append(caption);
-    const files = attachedFiles.length ? attachedFiles.map((file) => file.name) : ['Research notes.pdf', 'Project outline.md', 'Reading list.txt'];
-    files.forEach((name) => {
-      const row = document.createElement('div');
-      row.className = 'workspace-file';
-      row.innerHTML = '<svg class="icon"><use href="#i-file"/></svg><span></span>';
-      row.querySelector('span').textContent = name;
-      panel.append(row);
-    });
-    const button = document.createElement('button');
-    button.className = 'panel-action';
-    button.innerHTML = '<svg class="icon"><use href="#i-plus"/></svg> Add files';
-    button.addEventListener('click', () => $('#file-input').click());
-    panel.append(button);
-  }
-  if (name === 'settings') {
-    const caption = document.createElement('p');
-    caption.className = 'panel-caption';
-    caption.textContent = 'Make this space feel like yours.';
-    panel.append(caption);
-    for (const setting of [
-      { key: 'motion', label: 'Ambient motion', description: 'Let the singularity drift' },
-      { key: 'interaction', label: 'Cursor gravity', description: 'Bend the space around you' },
-    ]) {
-      const row = document.createElement('div');
-      row.className = 'setting-row';
-      row.innerHTML = `<span>${setting.label}<small>${setting.description}</small></span><button class="switch" role="switch" aria-label="${setting.label}" aria-checked="${settings[setting.key]}"></button>`;
-      row.querySelector('button').addEventListener('click', (event) => {
-        settings[setting.key] = !settings[setting.key];
-        event.currentTarget.setAttribute('aria-checked', String(settings[setting.key]));
-      });
-      panel.append(row);
-    }
-    const hint = document.createElement('p');
-    hint.className = 'keyboard-hint';
-    hint.innerHTML = 'Press <kbd>/</kbd> to start a thought.';
-    panel.append(hint);
-  }
+  const body = element('div', 'panel-body');
+  body.id = 'panel-body';
+  panel.append(body);
+  if (name === 'conversations') renderConversations(body);
+  if (name === 'workspace') renderWorkspace(body);
+  if (name === 'settings') renderSettings(body);
+  syncExpandedPage();
 }
+
 document.querySelectorAll('.nav-button').forEach((button) => {
   button.addEventListener('click', () => {
     closePopovers();
@@ -353,7 +691,10 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     const overlay = overlays.at(-1);
     if (overlay === 'popover') closePopovers({ restoreFocus: true });
-    else if (overlay === 'panel') openPanel('home', { restoreFocus: true });
+    else if (overlay === 'panel') {
+      if (pageExpanded) setPanelExpanded(false);
+      else openPanel('home', { restoreFocus: true });
+    }
     else if (overlay === 'tasks') setTasks(false, { restoreFocus: true });
     else if (voicePreview) setVoice(false);
     else return;
@@ -362,8 +703,13 @@ document.addEventListener('keydown', (event) => {
   }
   if (event.key === '/' && !event.target.matches('input, textarea')) {
     event.preventDefault();
-    $('#message-input').focus();
+    if (pageExpanded) beginMessage();
+    else $('#message-input').focus();
   }
 });
-reducedMotion.addEventListener('change', (event) => { settings.motion = !event.matches; });
+reducedMotion.addEventListener('change', (event) => {
+  settings.motion = !event.matches;
+  $('.setting-row .switch[aria-label="Ambient motion"]')?.setAttribute('aria-checked', String(settings.motion));
+  updateSettingsPreview();
+});
 window.addEventListener('pagehide', () => { scene.destroy(); clearInterval(processingTimer); clearTimeout(toastTimer); });

@@ -1,9 +1,9 @@
 import { createFluidSimulation } from './fluid-simulation.js';
 
-const BOUNDS=154,SIZE=BOUNDS*4;
+const BOUNDS=176,SIZE=BOUNDS*4;
 const TAU=Math.PI*2;
 
-export function createCoreField({radius=98}={}) {
+export function createCoreField({radius=112}={}) {
   const fluid=createFluidSimulation({resolution:160,bounds:BOUNDS,radius});
   const canvas=document.createElement('canvas');
   canvas.width=canvas.height=SIZE;

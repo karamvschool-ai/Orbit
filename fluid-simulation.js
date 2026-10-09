@@ -3,10 +3,10 @@
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const smooth = value => value * value * (3 - 2 * value);
 
-export function createFluidSimulation({ resolution = 128, bounds = 154, radius = 98 } = {}) {
+export function createFluidSimulation({ resolution = 128, bounds = 176, radius = 112 } = {}) {
   const n = clamp(Math.round(Number(resolution) || 128),32,256);
-  bounds = Math.max(16,Number(bounds) || 154);
-  radius = clamp(Number(radius) || 98,4,bounds*.88);
+  bounds = Math.max(16,Number(bounds) || 176);
+  radius = clamp(Number(radius) || 112,4,bounds*.88);
   const cell = bounds*2/(n-1), density = new Float32Array(n*n);
   const state = { x: 0, y: 0, opening: 0, stretch: 1, dx: 1, dy: 0, time: 0, influence: 48, radius };
   let previousX=0,previousY=0,previousStrength=0,disposed=false,dirty=false;
