@@ -33,9 +33,9 @@
 
       <nav class="navigation glass" aria-label="Main navigation">
         <button class="nav-button active" data-panel="home" aria-label="Home" aria-pressed="true" data-tooltip="Home"><svg class="icon"><use href="#i-home"/></svg></button>
-        <button class="nav-button" data-panel="conversations" aria-label="Conversations" aria-pressed="false" data-tooltip="Conversations"><svg class="icon"><use href="#i-chat"/></svg></button>
-        <button class="nav-button" data-panel="workspace" aria-label="Workspace" aria-pressed="false" data-tooltip="Workspace"><svg class="icon"><use href="#i-grid"/></svg></button>
-        <button class="nav-button" data-panel="settings" aria-label="Settings" aria-pressed="false" data-tooltip="Settings"><svg class="icon"><use href="#i-settings"/></svg></button>
+        <button class="nav-button" data-panel="conversations" aria-label="Conversations" aria-pressed="false" aria-controls="side-panel" aria-expanded="false" data-tooltip="Conversations"><svg class="icon"><use href="#i-chat"/></svg></button>
+        <button class="nav-button" data-panel="workspace" aria-label="Workspace" aria-pressed="false" aria-controls="side-panel" aria-expanded="false" data-tooltip="Workspace"><svg class="icon"><use href="#i-grid"/></svg></button>
+        <button class="nav-button" data-panel="settings" aria-label="Settings" aria-pressed="false" aria-controls="side-panel" aria-expanded="false" data-tooltip="Settings"><svg class="icon"><use href="#i-settings"/></svg></button>
       </nav>
 
       <section id="side-panel" class="side-panel glass" aria-label="Navigation panel" hidden></section>
@@ -52,16 +52,16 @@
 
       <section class="response-island glass" aria-label="Orbit's response">
         <div class="response-avatar" aria-hidden="true"><span class="orbit-ring"></span></div>
-        <p id="current-response">I reviewed your notes, organized the key points,<br class="desktop-break" /> and prepared a concise summary for you.</p>
-        <button class="more-button" id="response-more" aria-label="Response options" aria-expanded="false"><span></span><span></span><span></span></button>
+        <p id="current-response">I reviewed your notes, organized the key points, and prepared a concise summary for you.</p>
+        <button class="more-button" id="response-more" aria-label="Response options" aria-controls="response-menu" aria-expanded="false"><span></span><span></span><span></span></button>
         <div id="response-menu" class="popover glass response-menu" hidden>
-          <button id="copy-response">Copy response <span>⌘ C</span></button>
+          <button id="copy-response">Copy response</button>
           <button id="replay-response">Replay animation <svg class="icon"><use href="#i-arrow"/></svg></button>
         </div>
       </section>
 
       <form class="composer glass" id="composer" aria-label="Message Orbit">
-        <button class="round-button attach-button" type="button" id="attach-button" aria-label="Add attachment" aria-expanded="false"><svg class="icon"><use href="#i-plus"/></svg></button>
+        <button class="round-button attach-button" type="button" id="attach-button" aria-label="Add attachment" aria-controls="attach-menu" aria-expanded="false"><svg class="icon"><use href="#i-plus"/></svg></button>
         <input id="message-input" type="text" placeholder="Type a message or ask me anything..." aria-label="Your message" autocomplete="off" maxlength="2000" />
         <button class="round-button mic-button" id="mic-button" type="button" aria-label="Preview voice mode" aria-pressed="false"><svg class="icon"><use href="#i-mic"/></svg></button>
         <button class="round-button send-button" type="submit" aria-label="Send message"><svg class="icon"><use href="#i-send"/></svg></button>
@@ -97,7 +97,7 @@
           </div>
         </section>
       </aside>
-      <button class="restore-tasks glass" id="restore-tasks" aria-label="Open tasks"><svg class="icon"><use href="#i-grid"/></svg><span>Tasks</span></button>
+      <button class="restore-tasks glass" id="restore-tasks" aria-label="Open tasks" aria-controls="task-panel" aria-expanded="true" hidden><svg class="icon"><use href="#i-grid"/></svg><span>Tasks</span></button>
       <div class="toast glass" id="toast" role="status" aria-live="polite"></div>
       <div class="screen-reader-status" id="live-status" aria-live="polite"></div>
     </main>
