@@ -17,6 +17,7 @@ const scene = createSingularity($('#singularity'), {
   getEnergy: () => energy,
   getMotion: () => settings.motion,
   getInteraction: () => settings.interaction,
+  getState: () => voicePreview ? 'listening' : energy > .7 ? 'thinking' : 'idle',
 });
 
 function toast(message) {
