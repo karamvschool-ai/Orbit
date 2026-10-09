@@ -1,6 +1,6 @@
 # Orbit
 
-A standalone personal assistant frontend, carefully modeled on the supplied reference. The procedural singularity has a luminous rim, layered wave ribbons, orbiting particles, dimensional satellites, and cursor-driven gravity.
+A standalone personal assistant frontend, carefully modeled on the supplied reference. The singularity has a pure black face, luminous outer rim, continuously waving ribbons, orbiting particles and satellites, and an elastic silhouette that pushes away from your cursor.
 
 ## Run
 

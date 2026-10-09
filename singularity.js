@@ -1,4 +1,5 @@
 /* Orbit's singularity is painted entirely from geometry, light and noise. */
+import { createCoreShape } from './core-shape.js';
 const TAU = Math.PI * 2;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const mix = (a, b, t) => a + (b - a) * t;
@@ -10,61 +11,6 @@ function randomSource(seed) {
     t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
-}
-
-function makeCloudTexture() {
-  const size = 384;
-  const surface = document.createElement('canvas');
-  surface.width = surface.height = size;
-  const ctx = surface.getContext('2d');
-  const pixels = ctx.createImageData(size, size);
-  const random = randomSource(71803);
-  const fieldSize = 128;
-  const field = Float32Array.from({ length: fieldSize * fieldSize }, random);
-  const noise = (x, y) => {
-    const ix = Math.floor(x), iy = Math.floor(y);
-    let fx = x - ix, fy = y - iy;
-    fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
-    const at = (a, b) => field[((b % fieldSize + fieldSize) % fieldSize) * fieldSize + (a % fieldSize + fieldSize) % fieldSize];
-    return mix(mix(at(ix, iy), at(ix + 1, iy), fx), mix(at(ix, iy + 1), at(ix + 1, iy + 1), fx), fy);
-  };
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const nx = (x - size / 2) / (size / 2), ny = (y - size / 2) / (size / 2);
-      const r = Math.hypot(nx, ny);
-      let value = 0, weight = 0.52, frequency = 4;
-      for (let octave = 0; octave < 5; octave++) {
-        value += noise(nx * frequency + 48, ny * frequency + 37) * weight;
-        weight *= .49; frequency *= 2.1;
-      }
-      const folds = Math.pow(Math.abs(Math.sin(nx * 5 + ny * 3 + value * 10)), 9);
-      const shade = clamp(4 + value * 18 + folds * 13 + Math.pow(r, 5) * value * 20, 0, 55);
-      const index = (y * size + x) * 4;
-      pixels.data[index] = pixels.data[index + 1] = pixels.data[index + 2] = shade;
-      pixels.data[index + 3] = r < 1.05 ? 255 : 0;
-    }
-  }
-  ctx.putImageData(pixels, 0, 0);
-  return surface;
-}
-
-function makeLuminousMist() {
-  const surface = document.createElement('canvas');
-  surface.width = surface.height = 440;
-  const ctx = surface.getContext('2d');
-  const random = randomSource(12861);
-  for (let i = 0; i < 170; i++) {
-    const a = random() * TAU;
-    const r = 174 + random() * 28;
-    const x = 220 + Math.cos(a) * r, y = 220 + Math.sin(a) * r;
-    const size = 7 + random() * 18;
-    const light = ctx.createRadialGradient(x,y,0,x,y,size);
-    light.addColorStop(0,`rgba(255,255,255,${.08 + random() * .26})`);
-    light.addColorStop(.40,'rgba(255,255,255,.04)');
-    light.addColorStop(1,'rgba(255,255,255,0)');
-    ctx.fillStyle = light; ctx.fillRect(x-size,y-size,size*2,size*2);
-  }
-  return surface;
 }
 
 function sampleCurve(points, t) {
@@ -83,16 +29,20 @@ function sampleCurve(points, t) {
 export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () => true, getInteraction = () => true } = {}) {
   const ctx = canvas.getContext('2d', { alpha: true });
   if (!ctx) return { destroy() {} };
+  const coreShape = createCoreShape();
   const random = randomSource(34017);
-  const cloudTexture = makeCloudTexture();
-  const luminousMist = makeLuminousMist();
   let width = 0, height = 0, dpr = 1, scale = 1, centerX = 0, centerY = 0;
-  let frame = 0, destroyed = false, phase = 0, lastTime = 0, energy = 0;
-  const pointer = { x: 0, y: 0, targetX: 0, targetY: 0, presence: 0, targetPresence: 0 };
+  let frame = 0, destroyed = false, phase = 0, lastTime = 0, energy = 0, pressStrength = 0;
+  const pointer = { x: 0, y: 0, clientX: null, clientY: null, targetX: 0, targetY: 0, presence: 0, targetPresence: 0 };
+  const satellites = [
+    { a: 178, b: 125, tilt: 35 * Math.PI / 180, angle: 3.294, period: 34, direction: 1, radius: 11.4 },
+    { a: 192, b: 135, tilt: -27 * Math.PI / 180, angle: 3.062, period: 43, direction: -1, radius: 12.1 },
+    { a: 150, b: 110, tilt: 17 * Math.PI / 180, angle: .435, period: 28, direction: 1, radius: 12 },
+  ];
   const particles = Array.from({ length: 225 }, (_, i) => ({
     angle: random() * TAU,
     radius: 110 + random() ** .78 * 109,
-    speed: (random() - .5) * .023,
+    speed: (random() - .5) * .085,
     squash: .88 + random() * .12,
     size: i % 37 === 0 ? 1.65 : .35 + random() * .67,
     alpha: .25 + random() * .62,
@@ -105,10 +55,6 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     alpha: .10 + random() * .42,
     phase: random() * TAU,
   }));
-  const coreStars = Array.from({ length: 82 }, () => {
-    const a = random() * TAU, r = Math.sqrt(random()) * 97;
-    return { x: Math.cos(a) * r, y: Math.sin(a) * r, size: .22 + random() * .55, phase: random() * TAU };
-  });
   const ribbons = [
     { p: [[-740,-91],[-539,-214],[-451,-218],[-334,-99],[-236,-77],[-140,-80],[-50,-37]], spread: 17, bend: 16, alpha: .54, strands: 19 },
     { p: [[-795,85],[-608,-136],[-473,-50],[-370,40],[-208,6],[-94,-22],[20,15]], spread: 23, bend: 30, alpha: .27, strands: 12 },
@@ -135,15 +81,21 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     scale = width <= 900 ? Math.min(width * .0015, height / 850, 1) : Math.min(width / 1672, height / 941);
     centerX = width * (width <= 900 ? .50 : .495);
     centerY = height * (width <= 900 ? .42 : .46);
+    if (pointer.clientX !== null) {
+      pointer.targetX = (pointer.clientX - centerX) / scale;
+      pointer.targetY = (pointer.clientY - centerY) / scale;
+    }
   }
   function onPointer(event) {
+    pointer.clientX = event.clientX;
+    pointer.clientY = event.clientY;
     pointer.targetX = (event.clientX - centerX) / scale;
     pointer.targetY = (event.clientY - centerY) / scale;
     pointer.targetPresence = 1;
   }
   function onLeave() { pointer.targetPresence = 0; }
 
-  // A locally applied gravitational field pulls and bends the finest filaments.
+  // A local repulsive field pushes and bends the finest filaments.
   function warp(x, y, strength = 1) {
     if (pointer.presence < .001) return [x, y];
     const dx = x - pointer.x, dy = y - pointer.y;
@@ -151,19 +103,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     const falloff = Math.max(0, 1 - distance / 190);
     const influence = falloff * falloff * pointer.presence * strength;
     const pull = influence * 22 / Math.max(distance, 22);
-    return [x - dx * pull - dy * influence * .10, y - dy * pull + dx * influence * .10];
-  }
-  function pathAtRadius(radius, time, variation = 1, start = 0, end = TAU) {
-    ctx.beginPath();
-    const steps = Math.ceil((end - start) / TAU * 148);
-    for (let i = 0; i <= steps; i++) {
-      const a = start + (end - start) * i / steps;
-      const distortion = Math.sin(a * 7 + time * .52) * 1.15 + Math.sin(a * 13 - time * .31) * .62 + Math.sin(a * 23 + time * .18) * .38;
-      const r = radius + distortion * variation;
-      const p = warp(Math.cos(a) * r, Math.sin(a) * r, .15);
-      if (!i) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
-    }
-    if (end - start >= TAU - .001) ctx.closePath();
+    return [x + dx * pull - dy * influence * .10, y + dy * pull + dx * influence * .10];
   }
   function drawRibbons(time) {
     ctx.lineCap = 'round';
@@ -177,8 +117,9 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
           const before = ribbon.samples[Math.max(0,j-1)], after = ribbon.samples[Math.min(ribbon.samples.length-1,j+1)];
           const dx = after[0] - before[0], dy = after[1] - before[1], length = Math.hypot(dx, dy) || 1;
           const envelope = Math.sin(Math.PI * t) ** .65;
-          const oscillation = Math.sin(t * 11 + time * .13 + ribbon.phase + offset * 1.5);
-          const displacement = offset * ribbon.spread * (.35 + envelope * .65) + oscillation * ribbon.bend * envelope + Math.sin(t * 24 + strand * .48 - time * .17) * 2.3 * envelope;
+          const oscillation = Math.sin(t * 11 - time * .58 + ribbon.phase + offset * 1.5);
+          const breathing = Math.sin(time * .43 + ribbon.phase) * 10 * envelope;
+          const displacement = offset * ribbon.spread * (.35 + envelope * .65) + oscillation * ribbon.bend * envelope + Math.sin(t * 24 + strand * .48 - time * 1.05) * 4 * envelope + breathing;
           const p = warp(base[0] - dy / length * displacement, base[1] + dx / length * displacement);
           if (!j) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
         }
@@ -190,7 +131,12 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
       // A soft, translucent fold gives each stream a gauzy three-dimensional body.
       ctx.beginPath();
       ribbon.samples.forEach((p, i) => {
-        const q = warp(p[0], p[1]);
+        const t = i / (ribbon.samples.length - 1);
+        const before = ribbon.samples[Math.max(0, i - 1)], after = ribbon.samples[Math.min(ribbon.samples.length - 1, i + 1)];
+        const dx = after[0] - before[0], dy = after[1] - before[1], length = Math.hypot(dx, dy) || 1;
+        const envelope = Math.sin(Math.PI * t) ** .65;
+        const displacement = (Math.sin(t * 11 - time * .58 + ribbon.phase) * ribbon.bend + Math.sin(time * .43 + ribbon.phase) * 10) * envelope;
+        const q = warp(p[0] - dy / length * displacement, p[1] + dx / length * displacement);
         if (!i) ctx.moveTo(q[0], q[1]); else ctx.lineTo(q[0], q[1]);
       });
       ctx.strokeStyle = `rgba(82,84,86,${ribbon.alpha * .052})`;
@@ -211,7 +157,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
       ctx.beginPath();
       for (let j = 0; j < 95; j++) {
         const t = j / 94, p = sampleCurve(wavePaths[n], t);
-        const q = warp(p[0], p[1] + Math.sin(t * TAU + time * .09 + n) * 5);
+        const q = warp(p[0], p[1] + Math.sin(t * TAU - time * .32 + n) * 10);
         if (!j) ctx.moveTo(q[0], q[1]); else ctx.lineTo(q[0], q[1]);
       }
       ctx.stroke();
@@ -221,7 +167,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     ctx.lineWidth = .45;
     for (let ring = 0; ring < 15; ring++) {
       const radius = 111 + ring * 5.6;
-      const rotation = ring * .28 + time * (ring % 2 ? .011 : -.008);
+      const rotation = ring * .28 + time * (ring % 2 ? .035 : -.028);
       ctx.save(); ctx.rotate(rotation);
       ctx.scale(1, .97 - (ring % 5) * .012);
       ctx.beginPath();
@@ -257,113 +203,29 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
       ctx.beginPath(); ctx.arc(p[0],p[1],particle.radius,0,TAU);
       ctx.fillStyle = `rgba(38,42,44,${particle.alpha})`; ctx.fill();
     }
+    for (const satellite of satellites) {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, satellite.a, satellite.b, satellite.tilt, 0, TAU);
+      ctx.strokeStyle = 'rgba(83,88,92,.11)'; ctx.lineWidth = .45; ctx.stroke();
+    }
   }
-  function drawCore(time) {
+  function drawCore() {
     ctx.save();
-    const nearCore = Math.max(0, 1 - Math.hypot(pointer.x, pointer.y) / 280) * pointer.presence;
-    ctx.translate(pointer.x * nearCore * .012, pointer.y * nearCore * .012);
-    ctx.scale(1.055,1.055);
-    const pulse = Math.sin(time * .35) * .55 + energy * 1.7;
-    // A distant gray veil makes the brighter corona read as scattered light.
-    const haze = ctx.createRadialGradient(0,0,96,0,0,145);
-    haze.addColorStop(0,'rgba(87,94,95,0)');
-    haze.addColorStop(.32,'rgba(87,94,95,.06)');
-    haze.addColorStop(.58,'rgba(87,94,95,.038)');
-    haze.addColorStop(1,'rgba(87,94,95,0)');
-    ctx.fillStyle = haze; ctx.beginPath(); ctx.arc(0,0,145,0,TAU); ctx.fill();
-    // White scattered light stays narrow and luminous around a deeply black body.
-    let light = ctx.createRadialGradient(0,0,87,0,0,139);
-    light.addColorStop(0,'rgba(255,255,255,0)');
-    light.addColorStop(.25,'rgba(255,255,255,.29)');
-    light.addColorStop(.42,'rgba(255,255,255,.88)');
-    light.addColorStop(.62,'rgba(255,255,255,.37)');
-    light.addColorStop(1,'rgba(255,255,255,0)');
-    ctx.fillStyle = light; ctx.beginPath(); ctx.arc(0,0,139,0,TAU); ctx.fill();
-    // The outer rim is many irregular, translucent folds rather than a flat stroke.
-    ctx.shadowColor = 'rgba(255,255,255,.9)'; ctx.shadowBlur = 12;
-    for (let layer = 9; layer >= 0; layer--) {
-      pathAtRadius(99.5 + layer * .9 + pulse, time + layer * .31, 1.2 + layer * .10);
-      ctx.strokeStyle = `rgba(255,255,255,${.07 + (9 - layer) * .037})`;
-      ctx.lineWidth = layer < 3 ? 1.8 : 1.4; ctx.stroke();
+    // All light stays outside the opaque contour. The face is pure black.
+    coreShape.trace(ctx, 10);
+    ctx.strokeStyle = 'rgba(69,73,76,.08)'; ctx.lineWidth = 13;
+    ctx.shadowColor = 'rgba(59,64,67,.15)'; ctx.shadowBlur = 17; ctx.stroke();
+    ctx.shadowColor = 'rgba(255,255,255,.95)'; ctx.shadowBlur = 18;
+    for (const [offset, opacity, width] of [[10,.14,8],[6,.28,6],[3,.75,4],[1.4,.92,2.5]]) {
+      coreShape.trace(ctx, offset);
+      ctx.strokeStyle = `rgba(255,255,255,${opacity})`; ctx.lineWidth = width; ctx.stroke();
     }
     ctx.shadowBlur = 0;
-    pathAtRadius(99 + pulse, time, .72);
-    const body = ctx.createRadialGradient(-18,-23,9,3,2,102);
-    body.addColorStop(0,'#020303'); body.addColorStop(.47,'#020303');
-    body.addColorStop(.76,'#080909'); body.addColorStop(.92,'#252828'); body.addColorStop(1,'#747777');
-    ctx.fillStyle = body; ctx.fill(); ctx.save(); ctx.clip();
-    ctx.save(); ctx.rotate(time * .016);
-    ctx.globalAlpha = .62; ctx.drawImage(cloudTexture,-108,-108,216,216);
-    ctx.globalAlpha = .26; ctx.rotate(-time * .031 + .8); ctx.drawImage(cloudTexture,-119,-116,234,234);
-    ctx.restore();
-    const darkness = ctx.createRadialGradient(-5,-7,16,0,0,100);
-    darkness.addColorStop(0,'rgba(0,0,0,.65)'); darkness.addColorStop(.69,'rgba(0,0,0,.41)');
-    darkness.addColorStop(.95,'rgba(0,0,0,0)'); darkness.addColorStop(1,'rgba(255,255,255,.08)');
-    ctx.fillStyle = darkness; ctx.fillRect(-110,-110,220,220);
-    // Lensing arcs travel through the sphere's face as very fine strands of light.
-    for (let i = 0; i < 8; i++) {
-      const angles = [.36, -.45, .10, -.28, .63, -.62, 1.1, .89];
-      ctx.save(); ctx.rotate(angles[i] + Math.sin(time * .06 + i) * .035);
-      ctx.beginPath();
-      ctx.ellipse(0, Math.sin(i * 2.4 + time * .05) * 12, 116 - i * 1.5, 20 + (i % 4) * 9, 0, .1, TAU - .32);
-      ctx.strokeStyle = `rgba(225,234,234,${i % 3 === 0 ? .39 : .11})`;
-      ctx.lineWidth = i % 3 === 0 ? .68 : .35;
-      ctx.shadowColor = 'rgba(255,255,255,.7)'; ctx.shadowBlur = i % 3 === 0 ? 2 : 0;
-      ctx.stroke(); ctx.restore();
-    }
-    for (const star of coreStars) {
-      const shimmer = .35 + Math.sin(time * .4 + star.phase) * .20;
-      ctx.beginPath(); ctx.arc(star.x,star.y,star.size,0,TAU);
-      ctx.fillStyle = `rgba(244,249,248,${shimmer})`; ctx.fill();
-    }
-    // Scattered light penetrates the smoky edge, giving the hole a soft optical rim.
-    const rimLight = ctx.createRadialGradient(-1, -1, 65, 0, 0, 101);
-    rimLight.addColorStop(0,'rgba(255,255,255,0)');
-    rimLight.addColorStop(.30,'rgba(255,255,255,.025)');
-    rimLight.addColorStop(.48,'rgba(255,255,255,.10)');
-    rimLight.addColorStop(.68,'rgba(255,255,255,.37)');
-    rimLight.addColorStop(.84,'rgba(255,255,255,.78)');
-    rimLight.addColorStop(1,'rgba(255,255,255,1)');
-    ctx.fillStyle = rimLight; ctx.fillRect(-108,-108,216,216);
-    ctx.save(); ctx.rotate(time * .018);
-    ctx.drawImage(luminousMist,-110,-110,220,220);
-    ctx.restore();
-    for (let fold = 0; fold < 11; fold++) {
-      const angle = fold * .571 + Math.sin(time * .18 + fold) * .07;
-      ctx.beginPath();
-      for (let step = 0; step < 30; step++) {
-        const a = angle + step / 29 * (.31 + fold % 3 * .1);
-        const r = 90 + Math.sin(a * 9 + time * .2) * 2.4 + Math.sin(a * 19 - time * .27) * 1.4;
-        const x = Math.cos(a) * r, y = Math.sin(a) * r;
-        if (!step) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-      }
-      ctx.strokeStyle = `rgba(244,249,248,${fold % 3 === 0 ? .46 : .19})`;
-      ctx.lineWidth = fold % 3 === 0 ? 2.8 : 1.3;
-      ctx.shadowColor = 'rgba(255,255,255,.8)'; ctx.shadowBlur = 5;
-      ctx.stroke();
-    }
-    ctx.shadowBlur = 0;
-    ctx.restore();
-    // Broken white caustics and lit crescents make the perimeter feel volumetric.
-    ctx.shadowColor = '#fff'; ctx.shadowBlur = 5;
-    for (let i = 0; i < 18; i++) {
-      const angle = i * .349 + Math.sin(time * .1 + i) * .015;
-      pathAtRadius(99.7 + pulse + Math.sin(i * 2.7) * .65, time + i * .05, 1.15, angle, angle + .09 + (i % 4) * .046);
-      ctx.strokeStyle = `rgba(255,255,255,${.36 + (Math.sin(i * 1.7) + 1) * .21})`;
-      ctx.lineWidth = 1 + (i % 3) * .6; ctx.stroke();
-    }
-    ctx.shadowBlur = 0;
-    for (let i = 0; i < 5; i++) {
-      ctx.save(); ctx.rotate(.2 + i * .31 + time * .003);
-      ctx.beginPath(); ctx.ellipse(0,0,103 + i * .8,92 + i * 2.8,0,3.45,5.6);
-      ctx.strokeStyle = `rgba(255,255,255,${.20 - i * .027})`;
-      ctx.lineWidth = .8; ctx.stroke(); ctx.restore();
-    }
+    coreShape.trace(ctx);
+    ctx.fillStyle = '#000000'; ctx.fill();
     ctx.restore();
   }
-  function drawSatellite(x,y,r,time,offset) {
-    x += Math.sin(time * .09 + offset) * 2.3;
-    y += Math.cos(time * .07 + offset) * 2.3;
+  function drawSatellite(x,y,r) {
     const p = warp(x,y,.18);
     ctx.save(); ctx.translate(p[0],p[1]);
     const halo = ctx.createRadialGradient(0,0,r*.5,0,0,r*1.7);
@@ -391,22 +253,40 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     const delta = lastTime ? Math.min((timestamp-lastTime)/1000,.05) : 0;
     lastTime = timestamp;
     if (getMotion()) phase += delta;
-    pointer.x = mix(pointer.x,pointer.targetX,.075);
-    pointer.y = mix(pointer.y,pointer.targetY,.075);
-    pointer.presence = mix(pointer.presence,getInteraction() ? pointer.targetPresence : 0,.055);
-    energy = mix(energy,clamp(Number(getEnergy()) || 0,0,1),.04);
+    const movement = 1 - Math.exp(-delta / .065);
+    const presenceFade = 1 - Math.exp(-delta / .16);
+    pointer.x = mix(pointer.x,pointer.targetX,movement);
+    pointer.y = mix(pointer.y,pointer.targetY,movement);
+    pointer.presence = mix(pointer.presence,getInteraction() ? pointer.targetPresence : 0,presenceFade);
+    const coreProximity = clamp((133 - Math.hypot(pointer.x, pointer.y)) / 27, 0, 1);
+    pressStrength = mix(pressStrength,coreProximity * pointer.presence,presenceFade);
+    coreShape.update(pointer, pressStrength, delta, phase, energy);
+    energy = mix(energy,clamp(Number(getEnergy()) || 0,0,1),presenceFade);
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.clearRect(0,0,width,height);
     ctx.translate(centerX,centerY); ctx.scale(scale,scale);
-    drawRibbons(phase); drawOrbits(phase); drawGlint(phase); drawCore(phase);
-    drawSatellite(-134,-117,11.4,phase,.2);
-    drawSatellite(-165,96,12.1,phase,2.2);
-    drawSatellite(115,84,12,phase,4.2);
+    drawRibbons(phase); drawOrbits(phase); drawGlint(phase);
+    const positions = satellites.map(satellite => {
+      const angle = satellite.angle + phase * TAU / satellite.period * satellite.direction;
+      const x = satellite.a * Math.cos(angle), y = satellite.b * Math.sin(angle);
+      return {
+        x: x * Math.cos(satellite.tilt) - y * Math.sin(satellite.tilt),
+        y: x * Math.sin(satellite.tilt) + y * Math.cos(satellite.tilt),
+        r: satellite.radius * (1 + Math.sin(angle) * .10),
+        depth: Math.sin(angle),
+      };
+    });
+    for (const satellite of positions.filter(p => p.depth < 0)) drawSatellite(satellite.x, satellite.y, satellite.r);
+    drawCore();
+    for (const satellite of positions.filter(p => p.depth >= 0)) drawSatellite(satellite.x, satellite.y, satellite.r);
     frame = requestAnimationFrame(render);
   }
   resize();
   window.addEventListener('resize',resize,{passive:true});
   window.addEventListener('pointermove',onPointer,{passive:true});
+  function onPointerUp(event) { if (event.pointerType !== 'mouse') onLeave(); }
+  window.addEventListener('pointerup',onPointerUp,{passive:true});
+  window.addEventListener('pointercancel',onLeave,{passive:true});
   document.addEventListener('pointerleave',onLeave);
   window.addEventListener('blur',onLeave);
   frame = requestAnimationFrame(render);
@@ -415,6 +295,8 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
       destroyed = true; cancelAnimationFrame(frame);
       window.removeEventListener('resize',resize);
       window.removeEventListener('pointermove',onPointer);
+      window.removeEventListener('pointerup',onPointerUp);
+      window.removeEventListener('pointercancel',onLeave);
       document.removeEventListener('pointerleave',onLeave);
       window.removeEventListener('blur',onLeave);
     },
