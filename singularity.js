@@ -1,5 +1,5 @@
 /* Orbit's singularity is painted entirely from geometry, light and noise. */
-import { createCoreShape } from './core-shape.js';
+import { createCoreField } from './core-field.js';
 const TAU = Math.PI * 2;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const mix = (a, b, t) => a + (b - a) * t;
@@ -29,7 +29,7 @@ function sampleCurve(points, t) {
 export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () => true, getInteraction = () => true } = {}) {
   const ctx = canvas.getContext('2d', { alpha: true });
   if (!ctx) return { destroy() {} };
-  const coreShape = createCoreShape();
+  const coreField = createCoreField();
   const random = randomSource(34017);
   let width = 0, height = 0, dpr = 1, scale = 1, centerX = 0, centerY = 0;
   let frame = 0, destroyed = false, phase = 0, lastTime = 0, energy = 0, pressStrength = 0;
@@ -210,20 +210,9 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     }
   }
   function drawCore() {
-    ctx.save();
-    // All light stays outside the opaque contour. The face is pure black.
-    coreShape.trace(ctx, 10);
-    ctx.strokeStyle = 'rgba(69,73,76,.08)'; ctx.lineWidth = 13;
-    ctx.shadowColor = 'rgba(59,64,67,.15)'; ctx.shadowBlur = 17; ctx.stroke();
-    ctx.shadowColor = 'rgba(255,255,255,.95)'; ctx.shadowBlur = 18;
-    for (const [offset, opacity, width] of [[10,.14,8],[6,.28,6],[3,.75,4],[1.4,.92,2.5]]) {
-      coreShape.trace(ctx, offset);
-      ctx.strokeStyle = `rgba(255,255,255,${opacity})`; ctx.lineWidth = width; ctx.stroke();
-    }
-    ctx.shadowBlur = 0;
-    coreShape.trace(ctx);
-    ctx.fillStyle = '#000000'; ctx.fill();
-    ctx.restore();
+    const surface = coreField.render(pointer, pressStrength, energy);
+    const bounds = coreField.bounds;
+    ctx.drawImage(surface, -bounds, -bounds, bounds * 2, bounds * 2);
   }
   function drawSatellite(x,y,r) {
     const p = warp(x,y,.18);
@@ -260,7 +249,6 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     pointer.presence = mix(pointer.presence,getInteraction() ? pointer.targetPresence : 0,presenceFade);
     const coreProximity = clamp((133 - Math.hypot(pointer.x, pointer.y)) / 27, 0, 1);
     pressStrength = mix(pressStrength,coreProximity * pointer.presence,presenceFade);
-    coreShape.update(pointer, pressStrength, delta, phase, energy);
     energy = mix(energy,clamp(Number(getEnergy()) || 0,0,1),presenceFade);
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.clearRect(0,0,width,height);
@@ -299,6 +287,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
       window.removeEventListener('pointercancel',onLeave);
       document.removeEventListener('pointerleave',onLeave);
       window.removeEventListener('blur',onLeave);
+      coreField.destroy();
     },
   };
 }
