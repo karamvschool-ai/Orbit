@@ -1,6 +1,6 @@
 # Orbit
 
-A standalone personal assistant frontend, carefully modeled on the supplied reference. The singularity has a pure black face, luminous outer rim, continuously waving ribbons, and orbiting particles and satellites. A local displacement field bends nearby black material away from your cursor while the singularity stays centered. Uncovered areas reveal the existing scene underneath.
+A standalone personal assistant frontend, carefully modeled on the supplied reference. The singularity has a pure black face, an irregular luminous outer rim, shaded folding ribbons, and coordinated orbiting particles and satellites. An inverse radial displacement map moves black material away from the cursor into a rounded, gently warped opening, bending the nearby outer silhouette. It stays open during hover and closes promptly when the cursor leaves, while the core stays centered. Uncovered areas reveal the existing scene underneath. The ribbons and exterior light respond to the listening and thinking previews, and the satellites maintain their separation through each orbit.
 
 ## Run
 

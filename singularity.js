@@ -1,4 +1,4 @@
-/* Orbit's singularity is painted entirely from geometry, light and noise. */
+/* Orbit's singularity combines animated geometry with shaded orbital sprites. */
 import { createCoreField } from './core-field.js';
 const TAU = Math.PI * 2;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -26,18 +26,21 @@ function sampleCurve(points, t) {
   return [component(0), component(1)];
 }
 
-export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () => true, getInteraction = () => true } = {}) {
+export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () => true, getInteraction = () => true, getState = () => 'idle' } = {}) {
   const ctx = canvas.getContext('2d', { alpha: true });
   if (!ctx) return { destroy() {} };
   const coreField = createCoreField();
+  const orbitalImage = new Image();
+  orbitalImage.decoding = 'async';
+  orbitalImage.src = new URL('./assets/orbital-sphere.png',import.meta.url).href;
   const random = randomSource(34017);
   let width = 0, height = 0, dpr = 1, scale = 1, centerX = 0, centerY = 0;
   let frame = 0, destroyed = false, phase = 0, lastTime = 0, energy = 0, pressStrength = 0;
   const pointer = { x: 0, y: 0, clientX: null, clientY: null, targetX: 0, targetY: 0, presence: 0, targetPresence: 0 };
   const satellites = [
-    { a: 178, b: 125, tilt: 35 * Math.PI / 180, angle: 3.294, period: 34, direction: 1, radius: 11.4 },
-    { a: 192, b: 135, tilt: -27 * Math.PI / 180, angle: 3.062, period: 43, direction: -1, radius: 12.1 },
-    { a: 150, b: 110, tilt: 17 * Math.PI / 180, angle: .435, period: 28, direction: 1, radius: 12 },
+    { a: 178, b: 125, tilt: 35 * Math.PI / 180, angle: 3.294, period: 20, direction: 1, radius: 11.4 },
+    { a: 192, b: 135, tilt: -27 * Math.PI / 180, angle: 3.062, period: 20, direction: 1, radius: 12.1 },
+    { a: 150, b: 110, tilt: 17 * Math.PI / 180, angle: .435, period: 20, direction: 1, radius: 12 },
   ];
   const particles = Array.from({ length: 225 }, (_, i) => ({
     angle: random() * TAU,
@@ -71,7 +74,12 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     { p: [[-242,-178],[-180,-154],[-127,-167],[-72,-129],[-25,-79]], spread: 11, bend: 10, alpha: .54, strands: 10 },
     { p: [[-151,91],[-106,106],[-78,152],[-19,136],[21,99],[0,43]], spread: 13, bend: 10, alpha: .45, strands: 10 },
     { p: [[126,46],[174,-44],[136,-128],[91,-144],[58,-90]], spread: 11, bend: 10, alpha: .44, strands: 8 },
-  ].map((ribbon, i) => ({ ...ribbon, phase: i * 1.71, samples: Array.from({ length: 88 }, (_, n) => sampleCurve(ribbon.p, n / 87)) }));
+  ].map((ribbon, i) => ({
+    ...ribbon,
+    inkStrength: [.28,.16,0,.74,.24,.32,0,.27,.17,.42,0,.23,.52,.44,.50][i],
+    phase: i * 1.71,
+    samples: Array.from({ length: 88 }, (_, n) => sampleCurve(ribbon.p, n / 87)),
+  }));
 
   function resize() {
     width = window.innerWidth; height = window.innerHeight;
@@ -107,45 +115,94 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
   }
   function drawRibbons(time) {
     ctx.lineCap = 'round';
+    const listening = getState() === 'listening';
+    const breath = listening ? Math.sin(time * 2.6) * 3 : Math.sin(time * .7) * 1.5;
     for (const ribbon of ribbons) {
+      const major = ribbon.alpha >= .38 && ribbon.spread >= 16;
+      // Every strand shares one smooth, slowly folding surface. Small edge
+      // flutter adds detail without turning the whole stream into a tight coil.
+      const centers = ribbon.samples.map((base, j) => {
+        const t = j / (ribbon.samples.length - 1);
+        const before = ribbon.samples[Math.max(0,j-1)], after = ribbon.samples[Math.min(ribbon.samples.length-1,j+1)];
+        const dx = after[0] - before[0], dy = after[1] - before[1], length = Math.hypot(dx,dy) || 1;
+        const envelope = Math.sin(Math.PI * t) ** .85;
+        const displacement = (Math.sin(t * 4.8 - time * .95 + ribbon.phase) * ribbon.bend * 1.35 +
+          Math.sin(time * .74 + ribbon.phase * .6) * (19 + breath)) * envelope * (1 + energy * .12);
+        return { x: base[0] - dy / length * displacement, y: base[1] + dx / length * displacement, t, envelope };
+      });
+      const surface = centers.map((point, j) => {
+        const before = centers[Math.max(0,j-1)], after = centers[Math.min(centers.length-1,j+1)];
+        const dx = after.x - before.x, dy = after.y - before.y, length = Math.hypot(dx,dy) || 1;
+        const twist = Math.sin(point.t * 3.4 - time * .46 + ribbon.phase * .55);
+        return { ...point, nx: -dy / length, ny: dx / length,
+          width: ribbon.spread * (.22 + point.envelope * .78) *
+            (major ? 1.10 + twist * .22 : .68 + twist * .32), twist };
+      });
+      function edge(point, offset, flutter = 0) {
+        const displacement = offset * point.width + flutter;
+        return warp(point.x + point.nx * displacement,point.y + point.ny * displacement);
+      }
+      // Shaded cross-sections make the folds translucent surfaces, with a soft
+      // graphite underside and a pale reflective edge, rather than thick lines.
+      for (let j = 0; j < surface.length - 1; j += 3) {
+        const a = surface[j], b = surface[Math.min(j+3,surface.length-1)];
+        const leftA = edge(a,-1), rightA = edge(a,1), leftB = edge(b,-1), rightB = edge(b,1);
+        const midpoint = surface[Math.min(j+1,surface.length-1)];
+        const left = edge(midpoint,-1), right = edge(midpoint,1);
+        const shade = ctx.createLinearGradient(left[0],left[1],right[0],right[1]);
+        const body = ribbon.alpha * (.38 + midpoint.envelope * .62);
+        shade.addColorStop(0, `rgba(245,246,248,${body * .035})`);
+        shade.addColorStop(.16, `rgba(181,184,188,${body * .09})`);
+        shade.addColorStop(.43, `rgba(139,143,148,${body * (major ? .17 : .12)})`);
+        shade.addColorStop(.69, `rgba(52,56,61,${body * ((major ? .26 : .12) + midpoint.twist * .035)})`);
+        shade.addColorStop(.9, `rgba(244,245,247,${body * (major ? .28 : .16)})`);
+        shade.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.beginPath();ctx.moveTo(...leftA);ctx.lineTo(...leftB);ctx.lineTo(...rightB);ctx.lineTo(...rightA);ctx.closePath();
+        ctx.fillStyle = shade;ctx.fill();
+      }
       for (let strand = 0; strand < ribbon.strands; strand++) {
         const offset = (strand / (ribbon.strands - 1) - .5) * 2;
+        const foreground = ribbon.inkStrength > 0 && (strand === Math.floor(ribbon.strands * .38) ||
+          (ribbon.inkStrength >= .4 && strand === Math.floor(ribbon.strands * .72)));
+        const middle = !foreground && strand % 4 === 1;
         ctx.beginPath();
-        for (let j = 0; j < ribbon.samples.length; j++) {
-          const t = j / (ribbon.samples.length - 1);
-          const base = ribbon.samples[j];
-          const before = ribbon.samples[Math.max(0,j-1)], after = ribbon.samples[Math.min(ribbon.samples.length-1,j+1)];
-          const dx = after[0] - before[0], dy = after[1] - before[1], length = Math.hypot(dx, dy) || 1;
-          const envelope = Math.sin(Math.PI * t) ** .65;
-          const oscillation = Math.sin(t * 11 - time * .58 + ribbon.phase + offset * 1.5);
-          const breathing = Math.sin(time * .43 + ribbon.phase) * 10 * envelope;
-          const displacement = offset * ribbon.spread * (.35 + envelope * .65) + oscillation * ribbon.bend * envelope + Math.sin(t * 24 + strand * .48 - time * 1.05) * 4 * envelope + breathing;
-          const p = warp(base[0] - dy / length * displacement, base[1] + dx / length * displacement);
-          if (!j) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
+        for (let j = 0; j < surface.length; j++) {
+          const point = surface[j];
+          const flutter = Math.sin(point.t * 15 - time * 1.75 + strand * .6) * point.envelope *
+            (foreground ? .45 : .9 + Math.abs(offset) * .7);
+          const position = edge(point,offset,flutter);
+          if (!j) ctx.moveTo(...position); else ctx.lineTo(...position);
         }
         const weight = 1 - Math.abs(offset) * .65;
-        ctx.strokeStyle = `rgba(82,85,86,${ribbon.alpha * weight * (strand % 4 === 0 ? .14 : .067)})`;
-        ctx.lineWidth = strand % 5 === 0 ? 2.5 : .48 + (strand % 3) * .29;
+        if (foreground) {
+          const first = surface[0], last = surface[surface.length-1];
+          const ink = ctx.createLinearGradient(first.x,first.y,last.x,last.y);
+          const opacity = ribbon.inkStrength * weight;
+          const crest = strand < ribbon.strands * .5 ? .44 : .68;
+          ink.addColorStop(0, `rgba(28,30,31,${opacity * .025})`);
+          ink.addColorStop(.20, `rgba(28,30,31,${opacity * .20})`);
+          ink.addColorStop(crest, `rgba(28,30,31,${opacity})`);
+          ink.addColorStop(.86, `rgba(28,30,31,${opacity * .52})`);
+          ink.addColorStop(1, `rgba(28,30,31,${opacity * .10})`);
+          ctx.strokeStyle = ink;
+          ctx.lineWidth = strand < ribbon.strands * .5 ? (ribbon.inkStrength >= .7 ? .94 : .72) : .56;
+        } else {
+          ctx.strokeStyle = `rgba(${middle ? '55,58,60' : '105,109,113'},${ribbon.alpha * weight * (middle ? .20 : .052)})`;
+          ctx.lineWidth = .38 + (strand % 3) * .13;
+        }
         ctx.stroke();
+        if (foreground && ribbon.inkStrength >= .4 && strand < ribbon.strands * .5) {
+          for (const fraction of [.28,.48,.70]) {
+            const point = surface[Math.round(fraction * (surface.length-1))];
+            const position = edge(point,offset);
+            ctx.beginPath();ctx.arc(...position,.66,0,TAU);
+            ctx.fillStyle = `rgba(24,26,29,${ribbon.inkStrength * .9})`;ctx.fill();
+          }
+        }
       }
-      // A soft, translucent fold gives each stream a gauzy three-dimensional body.
-      ctx.beginPath();
-      ribbon.samples.forEach((p, i) => {
-        const t = i / (ribbon.samples.length - 1);
-        const before = ribbon.samples[Math.max(0, i - 1)], after = ribbon.samples[Math.min(ribbon.samples.length - 1, i + 1)];
-        const dx = after[0] - before[0], dy = after[1] - before[1], length = Math.hypot(dx, dy) || 1;
-        const envelope = Math.sin(Math.PI * t) ** .65;
-        const displacement = (Math.sin(t * 11 - time * .58 + ribbon.phase) * ribbon.bend + Math.sin(time * .43 + ribbon.phase) * 10) * envelope;
-        const q = warp(p[0] - dy / length * displacement, p[1] + dx / length * displacement);
-        if (!i) ctx.moveTo(q[0], q[1]); else ctx.lineTo(q[0], q[1]);
-      });
-      ctx.strokeStyle = `rgba(82,84,86,${ribbon.alpha * .052})`;
-      ctx.lineWidth = ribbon.spread * .65;
-      ctx.shadowColor = `rgba(90,93,96,${ribbon.alpha * .10})`; ctx.shadowBlur = 6;
-      ctx.stroke(); ctx.shadowBlur = 0;
     }
     // Long, barely visible orbital waves provide the composition's airy reach.
-    ctx.strokeStyle = 'rgba(109,112,116,.12)'; ctx.lineWidth = .48;
+    ctx.strokeStyle = 'rgba(109,112,116,.17)'; ctx.lineWidth = .48;
     const wavePaths = [
       [[-705,-304],[-558,-311],[-431,-225],[-350,-20],[-181,64],[20,5]],
       [[-777,-114],[-599,-97],[-441,11],[-282,108],[-152,66],[49,24]],
@@ -157,7 +214,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
       ctx.beginPath();
       for (let j = 0; j < 95; j++) {
         const t = j / 94, p = sampleCurve(wavePaths[n], t);
-        const q = warp(p[0], p[1] + Math.sin(t * TAU - time * .32 + n) * 10);
+        const q = warp(p[0], p[1] + Math.sin(t * TAU - time * .66 + n) * 22);
         if (!j) ctx.moveTo(q[0], q[1]); else ctx.lineTo(q[0], q[1]);
       }
       ctx.stroke();
@@ -167,68 +224,65 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     ctx.lineWidth = .45;
     for (let ring = 0; ring < 15; ring++) {
       const radius = 111 + ring * 5.6;
-      const rotation = ring * .28 + time * (ring % 2 ? .035 : -.028);
+      const rotation = ring * .28 + time * (ring % 2 ? .075 : -.062);
       ctx.save(); ctx.rotate(rotation);
       ctx.scale(1, .97 - (ring % 5) * .012);
       ctx.beginPath();
       ctx.arc(0,0,radius, .10 + ring * .31, 4.5 + ring * .30);
-      ctx.strokeStyle = `rgba(96,101,105,${ring % 3 === 0 ? .16 : .082})`;
+      ctx.strokeStyle = `rgba(96,101,105,${ring % 3 === 0 ? .22 : .115})`;
       ctx.stroke(); ctx.restore();
     }
     // Inclined orbital ellipses bring a scientific wire-frame quality to the halo.
     for (let i = 0; i < 7; i++) {
-      ctx.save(); ctx.rotate(i * .47 + .2 + time * .007);
+      ctx.save(); ctx.rotate(i * .47 + .2 + time * .024);
       ctx.beginPath(); ctx.ellipse(0, 0, 195 - i * 6, 73 + i * 12, 0, .2, TAU - .26);
-      ctx.strokeStyle = `rgba(109,113,117,${i % 2 ? .057 : .088})`;
+      ctx.strokeStyle = `rgba(109,113,117,${i % 2 ? .078 : .12})`;
       ctx.lineWidth = .42; ctx.stroke(); ctx.restore();
     }
     ctx.beginPath(); ctx.moveTo(0,-244); ctx.lineTo(0,237);
-    ctx.strokeStyle = 'rgba(66,70,74,.32)'; ctx.lineWidth = .45; ctx.stroke();
+    ctx.strokeStyle = 'rgba(66,70,74,.40)'; ctx.lineWidth = .45; ctx.stroke();
     ctx.setLineDash([1, 13]);
     ctx.beginPath(); ctx.moveTo(-350,0); ctx.lineTo(258,0);
-    ctx.strokeStyle = 'rgba(79,83,85,.22)'; ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = 'rgba(79,83,85,.29)'; ctx.stroke(); ctx.setLineDash([]);
     for (const y of [-190,-153,-135,135,168]) {
       ctx.beginPath(); ctx.arc(0,y,y === -135 ? 1.7 : 2.8,0,TAU);
       ctx.fillStyle = '#141616'; ctx.fill();
     }
     for (const particle of particles) {
-      const a = particle.angle + time * particle.speed;
-      const r = particle.radius + Math.sin(time * .13 + particle.offset) * 2;
+      const a = particle.angle + time * particle.speed * 1.8;
+      const r = particle.radius + Math.sin(time * .55 + particle.offset) * 5.5;
       const p = warp(Math.cos(a) * r, Math.sin(a) * r * particle.squash, .7);
       ctx.beginPath(); ctx.arc(p[0],p[1],particle.size,0,TAU);
       ctx.fillStyle = `rgba(22,25,26,${particle.alpha})`; ctx.fill();
     }
     for (const particle of dust) {
-      const p = warp(particle.x + Math.sin(time * .05 + particle.phase) * 5, particle.y + Math.cos(time * .04 + particle.phase) * 4, .6);
+      const p = warp(particle.x + Math.sin(time * .28 + particle.phase) * 10, particle.y + Math.cos(time * .24 + particle.phase) * 8, .6);
       ctx.beginPath(); ctx.arc(p[0],p[1],particle.radius,0,TAU);
       ctx.fillStyle = `rgba(38,42,44,${particle.alpha})`; ctx.fill();
     }
     for (const satellite of satellites) {
       ctx.beginPath();
       ctx.ellipse(0, 0, satellite.a, satellite.b, satellite.tilt, 0, TAU);
-      ctx.strokeStyle = 'rgba(83,88,92,.11)'; ctx.lineWidth = .45; ctx.stroke();
+      ctx.strokeStyle = 'rgba(83,88,92,.15)'; ctx.lineWidth = .45; ctx.stroke();
     }
   }
-  function drawCore() {
-    const surface = coreField.render(pointer, pressStrength, energy);
+  function drawCore(delta) {
+    const surface = coreField.render(pointer, pressStrength, energy, delta, phase);
     const bounds = coreField.bounds;
     ctx.drawImage(surface, -bounds, -bounds, bounds * 2, bounds * 2);
   }
   function drawSatellite(x,y,r) {
+    if (!orbitalImage.complete || !orbitalImage.naturalWidth) return;
     const p = warp(x,y,.18);
     ctx.save(); ctx.translate(p[0],p[1]);
-    const halo = ctx.createRadialGradient(0,0,r*.5,0,0,r*1.7);
-    halo.addColorStop(0,'rgba(255,255,255,.8)'); halo.addColorStop(1,'rgba(255,255,255,0)');
-    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(0,0,r*1.7,0,TAU); ctx.fill();
-    const sphere = ctx.createRadialGradient(-r*.33,-r*.38,r*.04,-r*.05,-r*.04,r);
-    sphere.addColorStop(0,'#626564'); sphere.addColorStop(.25,'#292b2a');
-    sphere.addColorStop(.58,'#040605'); sphere.addColorStop(.81,'#0b0d0c'); sphere.addColorStop(1,'#8b8e8c');
-    ctx.fillStyle = sphere; ctx.beginPath(); ctx.arc(0,0,r,0,TAU); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,.68)'; ctx.lineWidth = .7; ctx.stroke();
+    ctx.imageSmoothingQuality = 'high';
+    ctx.filter = `blur(${.55 * dpr * scale}px)`;
+    const extent = r / .891;
+    ctx.drawImage(orbitalImage,-extent,-extent,extent*2,extent*2);
     ctx.restore();
   }
   function drawGlint(time) {
-    const x = 229 + Math.sin(time * .07) * 3, y = -183 + Math.cos(time * .06) * 3;
+    const x = 229 + Math.sin(time * .36) * 9, y = -183 + Math.cos(time * .31) * 8;
     const flare = ctx.createRadialGradient(x,y,0,x,y,27);
     flare.addColorStop(0,'rgba(255,255,255,.96)'); flare.addColorStop(.16,'rgba(255,255,255,.68)');
     flare.addColorStop(1,'rgba(255,255,255,0)');
@@ -241,14 +295,13 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     if (destroyed) return;
     const delta = lastTime ? Math.min((timestamp-lastTime)/1000,.05) : 0;
     lastTime = timestamp;
-    if (getMotion()) phase += delta;
-    const movement = 1 - Math.exp(-delta / .065);
-    const presenceFade = 1 - Math.exp(-delta / .16);
-    pointer.x = mix(pointer.x,pointer.targetX,movement);
-    pointer.y = mix(pointer.y,pointer.targetY,movement);
-    pointer.presence = mix(pointer.presence,getInteraction() ? pointer.targetPresence : 0,presenceFade);
+    if (getMotion()) phase += delta * (getState() === 'thinking' ? 1.15 : 1);
+    const presenceFade = 1 - Math.exp(-delta / .075);
+    pointer.x = pointer.targetX;
+    pointer.y = pointer.targetY;
+    pointer.presence = getInteraction() ? pointer.targetPresence : 0;
     const coreProximity = clamp((133 - Math.hypot(pointer.x, pointer.y)) / 27, 0, 1);
-    pressStrength = mix(pressStrength,coreProximity * pointer.presence,presenceFade);
+    pressStrength = coreProximity * pointer.presence;
     energy = mix(energy,clamp(Number(getEnergy()) || 0,0,1),presenceFade);
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.clearRect(0,0,width,height);
@@ -265,7 +318,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
       };
     });
     for (const satellite of positions.filter(p => p.depth < 0)) drawSatellite(satellite.x, satellite.y, satellite.r);
-    drawCore();
+    drawCore(delta);
     for (const satellite of positions.filter(p => p.depth >= 0)) drawSatellite(satellite.x, satellite.y, satellite.r);
     frame = requestAnimationFrame(render);
   }
