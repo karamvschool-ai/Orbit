@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="is-starting">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,9 +7,19 @@
     <meta name="description" content="Orbit. A quiet space for your thoughts, with an interactive singularity at its center." />
     <title>Orbit — Your personal assistant</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>html.is-starting{background:#000}html.is-starting .orbit-app{opacity:0}#startup{position:fixed;inset:0;background:#000;z-index:1000}</style>
+    <noscript><style>#startup{display:none}html.is-starting .orbit-app{opacity:1}</style></noscript>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
+    <div id="startup" aria-hidden="true">
+      <div class="startup-position">
+        <svg class="startup-trace" viewBox="0 0 240 240"><circle cx="120" cy="120" r="112" pathLength="1"/></svg>
+        <!-- Visualization: NASA’s Goddard Space Flight Center/Jeremy Schnittman.
+             https://svs.gsfc.nasa.gov/13326 — displayed in monochrome. -->
+        <video class="startup-hole" poster="/assets/startup-black-hole.jpg" muted playsinline loop preload="auto" tabindex="-1"><source src="/assets/startup-black-hole.webm" type="video/webm"><source src="/assets/startup-black-hole.mp4" type="video/mp4"></video>
+      </div>
+    </div>
     <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-8H9v8H4a1 1 0 0 1-1-1z"/></symbol>
       <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 4H4a2 2 0 0 0-2 2v15l5-4h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Z"/><path d="M7 10h.01M12 10h.01M17 10h.01" stroke-width="2.5"/></symbol>
