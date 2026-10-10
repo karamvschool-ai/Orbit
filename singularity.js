@@ -3,6 +3,9 @@ import { createCoreField } from './core-field.js';
 const TAU = Math.PI * 2;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const mix = (a, b, t) => a + (b - a) * t;
+const gaussian = n => Math.exp(-(n*n));
+const DISK_TILT = Math.PI / 15;
+const BRIGHT_ANGLE = -2.35;
 
 function randomSource(seed) {
   return () => {
@@ -40,6 +43,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
   const stateMix = { listening: 0, thinking: 0 };
   const visual = { listening: 0, thinking: 0, completeProgress: -1 };
   const scratch = [0, 0];
+  const accretionBuffers = Array.from({length:11},()=>new Float32Array(87*2));
   const satellitePositions = Array.from({length: 3}, () => ({x: 0, y: 0, r: 0, depth: 0}));
   const pointer = { x: 0, y: 0, clientX: null, clientY: null, targetX: 0, targetY: 0, presence: 0, targetPresence: 0 };
   const satellites = [
@@ -66,12 +70,12 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
   const ribbons = [
     { p: [[-740,-91],[-539,-214],[-451,-218],[-334,-99],[-236,-77],[-140,-80],[-50,-37]], spread: 17, bend: 16, alpha: .54, strands: 19 },
     { p: [[-795,85],[-608,-136],[-473,-50],[-370,40],[-208,6],[-94,-22],[20,15]], spread: 23, bend: 30, alpha: .27, strands: 12 },
-    { p: [[-850,130],[-555,51],[-402,5],[-248,2],[-110,1],[19,-14]], spread: 13, bend: 17, alpha: .26, strands: 9 },
+    { p: [[-850,130],[-555,51],[-402,5],[-248,-18],[-177,-46],[-115,-93],[-37,-115]], spread: 13, bend: 17, alpha: .32, strands: 9 },
     { p: [[-236,-310],[-235,-252],[-206,-192],[-158,-158],[-78,-132],[-28,-59]], spread: 24, bend: 19, alpha: .62, strands: 20 },
     { p: [[-166,-365],[-192,-280],[-170,-197],[-99,-167],[-39,-108],[9,-14]], spread: 16, bend: 14, alpha: .29, strands: 11 },
     { p: [[-54,48],[-118,85],[-166,145],[-245,164],[-308,198],[-418,280]], spread: 29, bend: 24, alpha: .38, strands: 16 },
     { p: [[-62,24],[-155,90],[-185,165],[-240,191],[-353,179],[-487,219]], spread: 23, bend: 15, alpha: .25, strands: 11 },
-    { p: [[38,22],[151,-11],[236,-85],[304,-60],[384,29],[488,89],[656,130]], spread: 23, bend: 24, alpha: .55, strands: 21 },
+    { p: [[34,-112],[109,-81],[176,-22],[236,-48],[304,-38],[384,29],[488,89],[656,130]], spread: 23, bend: 24, alpha: .55, strands: 21 },
     { p: [[64,-14],[184,-73],[259,-74],[331,22],[474,129],[636,231],[848,221]], spread: 31, bend: 14, alpha: .34, strands: 15 },
     { p: [[24,77],[103,115],[182,137],[228,187],[271,213],[356,228],[438,352]], spread: 25, bend: 22, alpha: .51, strands: 19 },
     { p: [[8,105],[131,169],[222,161],[257,185],[311,255],[350,368]], spread: 19, bend: 21, alpha: .25, strands: 12 },
@@ -144,10 +148,28 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     out[1] = y + (material[1] - y) * connection + dy * pull + dx * influence * .035;
     return out;
   }
+  // A permanent lens bends the distant scene first; cursor transport then acts
+  // on that apparent position, so the two fields never fight over the same ray.
+  function lensPoint(x, y, strength = 1, out = scratch) {
+    const radius = Math.hypot(x,y);
+    if(radius<.01){out[0]=x;out[1]=y;return out;}
+    const angle=Math.atan2(y,x);
+    const radial=gaussian((radius-119)/59);
+    const tangential=gaussian((radius-145)/90);
+    const apparentRadius=radius+15*radial*strength;
+    const apparentAngle=angle+.19*Math.sin(2*(angle-DISK_TILT))*tangential*strength;
+    out[0]=Math.cos(apparentAngle)*apparentRadius;
+    out[1]=Math.sin(apparentAngle)*apparentRadius;
+    return out;
+  }
+  function filamentWarp(x,y,strength=1,out=scratch) {
+    const lensed=lensPoint(x,y,strength,out);
+    return warp(lensed[0],lensed[1],strength,out);
+  }
   function ribbonEdge(ribbon, j, offset, flutter = 0) {
     const s = ribbon.surface, i = j * 12;
     const displacement = offset * s[i+6] + flutter;
-    return warp(s[i] + s[i+4] * displacement, s[i+1] + s[i+5] * displacement);
+    return filamentWarp(s[i] + s[i+4] * displacement, s[i+1] + s[i+5] * displacement);
   }
   function drawRibbonSignal(ribbon, index, time) {
     if (!getMotion()) return;
@@ -189,15 +211,22 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
         const before=ribbon.samples[Math.max(0,j-1)], after=ribbon.samples[Math.min(87,j+1)];
         const dx=after[0]-before[0], dy=after[1]-before[1], length=Math.hypot(dx,dy)||1;
         const envelope=Math.sin(Math.PI*t)**.85;
-        const displacement=(Math.sin(t*4.8-time*(.79+stateMix.thinking*.20)+ribbon.phase)*ribbon.bend*1.35 +
-          Math.sin(time*.74+ribbon.phase*.6)*(19+breath))*envelope*(1+energy*.12);
+        const inner=gaussian((Math.hypot(base[0],base[1])-142)/135);
+        const outerWave=Math.sin(t*4.8-time*.46+ribbon.phase);
+        const innerWave=Math.sin(t*6-time*1.58+ribbon.phase);
+        const outerDrift=Math.sin(time*.40+ribbon.phase*.6);
+        const innerDrift=Math.sin(time*1.04+ribbon.phase*.6);
+        const displacement=(mix(outerWave,innerWave,inner)*ribbon.bend*(1.25-inner*.60) +
+          mix(outerDrift,innerDrift,inner)*(19+breath)*(1-inner*.56))*envelope*(1+energy*.12);
         s[i]=base[0]-dy/length*displacement;s[i+1]=base[1]+dx/length*displacement;
         s[i+2]=t;s[i+3]=envelope;
       }
       for(let j=0;j<88;j++) {
         const i=j*12, before=Math.max(0,j-1)*12, after=Math.min(87,j+1)*12;
         const dx=s[after]-s[before],dy=s[after+1]-s[before+1],length=Math.hypot(dx,dy)||1;
-        const twist=Math.sin(s[i+2]*3.4-time*.46+ribbon.phase*.55);
+        const inner=gaussian((Math.hypot(s[i],s[i+1])-142)/135);
+        const twist=mix(Math.sin(s[i+2]*3.4-time*.30+ribbon.phase*.55),
+          Math.sin(s[i+2]*4.2-time*1.08+ribbon.phase*.55),inner);
         s[i+4]=-dy/length;s[i+5]=dx/length;s[i+7]=twist;
         s[i+6]=ribbon.spread*(.22+s[i+3]*.78)*(major?1.10+twist*.22:.68+twist*.32);
         let q=ribbonEdge(ribbon,j,-1);s[i+8]=q[0];s[i+9]=q[1];
@@ -227,7 +256,9 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
         const middle=!foreground&&strand%4===1;
         ctx.beginPath();
         for(let j=0;j<88;j+=sampleStep) {
-          const i=j*12, flutter=Math.sin(s[i+2]*15-time*1.75+strand*.6)*s[i+3]*(foreground?.45:.9+Math.abs(offset)*.7);
+          const i=j*12,inner=gaussian((Math.hypot(s[i],s[i+1])-142)/135);
+          const flutter=mix(Math.sin(s[i+2]*15-time*.98+strand*.6),
+            Math.sin(s[i+2]*17-time*3.08+strand*.6),inner)*s[i+3]*(foreground?.45:.9+Math.abs(offset)*.7);
           const q=ribbonEdge(ribbon,j,offset,flutter);
           if(!j)ctx.moveTo(q[0],q[1]);else ctx.lineTo(q[0],q[1]);
         }
@@ -259,10 +290,80 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     for(let n=0;n<wavePaths.length;n++) {
       ctx.beginPath();
       for(let j=0;j<95;j+=sampleStep) {
-        const p=wavePaths[n][j],q=warp(p[0],p[1]+Math.sin(j/94*TAU-time*.66+n)*22);
+        const p=wavePaths[n][j],inner=gaussian((Math.hypot(p[0],p[1])-142)/135);
+        const wave=mix(Math.sin(j/94*TAU-time*.40+n),Math.sin(j/94*TAU*1.2-time*1.24+n),inner);
+        const q=filamentWarp(p[0],p[1]+wave*22*(1-inner*.55));
         if(!j)ctx.moveTo(q[0],q[1]);else ctx.lineTo(q[0],q[1]);
       }
       ctx.stroke();
+    }
+  }
+  function accretionPoint(angle,track,time,rear,out=scratch,imageOffset=0) {
+    const sin=Math.sin(angle),cos=Math.cos(angle),depth=Math.abs(sin);
+    const radius=189+track*2.7;
+    const shear=Math.sin(angle*4-time*(1.55-track*.025)+track*.63)*1.25*depth;
+    const x=cos*radius;
+    // The rear plane appears again above the shadow; its near-side image is
+    // compressed below it. Both are drawn before the core masks the scene.
+    const y=sin*(rear?52:43)+(rear?-70:64)*depth**1.7+track*.85+shear;
+    const cosine=Math.cos(DISK_TILT),sine=Math.sin(DISK_TILT);
+    const lensed=lensPoint(x*cosine-y*sine,x*sine+y*cosine,.93,out);
+    const apparentRadius=Math.hypot(lensed[0],lensed[1])||1;
+    const imageScale=1+imageOffset/apparentRadius;
+    return warp(lensed[0]*imageScale,lensed[1]*imageScale,.93,out);
+  }
+  function drawAccretion(time) {
+    const count=width<=600?54:86;
+    ctx.lineCap='round';
+    const trace=(buffer,from=0,to=count)=>{
+      ctx.beginPath();ctx.moveTo(buffer[from*2],buffer[from*2+1]);
+      for(let j=from+1;j<=to;j++)ctx.lineTo(buffer[j*2],buffer[j*2+1]);
+    };
+    const shade=(buffer,alpha,white=false)=>{
+      const first=buffer[0]<buffer[count*2]?0:count*2,last=first?0:count*2;
+      const gradient=ctx.createLinearGradient(buffer[first],buffer[first+1],buffer[last],buffer[last+1]);
+      const rgb=white?'255,255,255':'30,35,39';
+      const peak=.2+.5*(.5+.5*Math.cos(BRIGHT_ANGLE));
+      for(const [position,weight] of [[0,0],[.10,.32],[peak,1],[.47,.78],[.70,.36],[.91,.12],[1,0]])
+        gradient.addColorStop(position,`rgba(${rgb},${alpha*weight})`);
+      return gradient;
+    };
+    for(const rear of [true,false]) {
+      const start=rear?Math.PI:0;
+      const tracks=rear?7:4;
+      for(let track=0;track<tracks;track++) {
+        const offset=track-(tracks-1)/2,buffer=accretionBuffers[(rear?0:7)+track];
+        for(let j=0;j<=count;j++) {
+          const point=accretionPoint(start+j/count*Math.PI,offset,time,rear);
+          buffer[j*2]=point[0];buffer[j*2+1]=point[1];
+        }
+        const primary=rear&&(track===2||track===4);
+        const alpha=rear?(primary?.61:.21):.15;
+        trace(buffer);ctx.lineWidth=primary?.88:.44;
+        ctx.strokeStyle=shade(buffer,alpha);ctx.stroke();
+        if(rear&&track===3) {
+          // A graphite shoulder makes the narrow white current legible on ivory.
+          ctx.lineWidth=6.2;ctx.strokeStyle=shade(buffer,.19);ctx.stroke();
+          ctx.lineWidth=1.2;ctx.strokeStyle=shade(buffer,.91,true);ctx.stroke();
+        }
+        if(rear&&primary) {
+          const head=(time*(.19+track*.018)+track*.31)%1;
+          const from=Math.max(1,Math.floor(head*count)-6),to=Math.min(count-1,Math.floor(head*count));
+          if(to>from) {
+            trace(buffer,from,to);ctx.lineWidth=.95;
+            ctx.strokeStyle=`rgba(255,255,255,${Math.sin(head*Math.PI)*.46})`;ctx.stroke();
+          }
+        }
+      }
+      // A selected second image, rather than another complete construction ring.
+      if(rear)for(const range of [[Math.PI*1.13,Math.PI*1.53],[Math.PI*1.63,Math.PI*1.88]]) {
+        ctx.beginPath();
+        for(let j=0;j<=40;j++) {
+          const q=accretionPoint(mix(range[0],range[1],j/40),1,time,true,scratch,-6);
+          if(!j)ctx.moveTo(q[0],q[1]);else ctx.lineTo(q[0],q[1]);
+        }
+        ctx.lineWidth=.45;ctx.strokeStyle='rgba(66,73,78,.14)';ctx.stroke();
+      }
     }
   }
   function traceOrbit(a,b,tilt,start,end,strength=.46) {
@@ -276,17 +377,17 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
   }
   function drawOrbits(time) {
     ctx.lineWidth = .45;
-    for (let ring = 0; ring < 15; ring++) {
-      const radius = 111 + ring * 5.6;
+    for (let ring = 0; ring < 6; ring++) {
+      const radius = 134 + ring * 8.1;
       const rotation = ring * .28 + time * (ring % 2 ? .075 : -.062);
       traceOrbit(radius,radius*(.97-(ring%5)*.012),rotation,.10+ring*.31,4.5+ring*.30);
-      ctx.strokeStyle = `rgba(96,101,105,${ring % 3 === 0 ? .22 : .115})`;
+      ctx.strokeStyle = `rgba(96,101,105,${ring % 3 === 0 ? .095 : .048})`;
       ctx.stroke();
     }
     // Inclined orbital ellipses bring a scientific wire-frame quality to the halo.
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 3; i++) {
       traceOrbit(195-i*6,73+i*12,i*.47+.2+time*.024,.2,TAU-.26);
-      ctx.strokeStyle = `rgba(109,113,117,${i % 2 ? .078 : .12})`;
+      ctx.strokeStyle = `rgba(109,113,117,${i % 2 ? .035 : .055})`;
       ctx.lineWidth = .42; ctx.stroke();
     }
     ctx.beginPath(); ctx.moveTo(0,-244); ctx.lineTo(0,237);
@@ -361,7 +462,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     const surface=coreField.render(pointer,pressStrength,energy,delta,phase,visual);
     ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
     ctx.translate(centerX,centerY);ctx.scale(scale,scale);
-    drawRibbons(phase);drawOrbits(phase);drawGlint(phase);
+    drawRibbons(phase);drawOrbits(phase);drawAccretion(phase);drawGlint(phase);
     for(let i=0;i<satellites.length;i++) {
       const satellite=satellites[i],position=satellitePositions[i];
       const angle=satellite.angle+phase*TAU/satellite.period*satellite.direction;

@@ -54,9 +54,8 @@ button:disabled { cursor: default; }
 .status-ring.ready { animation: none; border-color: #b1b1b6; }
 .orbit-wordmark { position: absolute; left: 49.5%; top: 46%; transform: translate(-50%, -50%); width: 35.1%; max-width: 590px; min-width: 460px; display: flex; justify-content: space-between; align-items: center; font-size: clamp(43px, 3.4vw, 57px); font-weight: 200; line-height: 1; letter-spacing: -2px; user-select: none; pointer-events: none; z-index: 1; }
 .orbit-wordmark span { display: block; width: 45px; text-align: center; }
-.orbit-wordmark .core-letter { color: #fff; font-weight: 200; text-shadow: 0 0 15px #ffffff1a; }
+.orbit-wordmark .core-letter { position: relative; left: 6px; color: #fff; font-weight: 200; }
 .orbit-wordmark span:nth-child(2) { transform: translateX(-4px); }
-.orbit-wordmark span:nth-child(3) { transform: translateX(6px); }
 .orbit-wordmark span:nth-child(4) { transform: translateX(11px); }
 .response-island { position: absolute; left: 49.65%; bottom: calc(var(--composer-bottom) + var(--composer-height) + var(--island-gap)); transform: translateX(-50%); width: clamp(440px, 36vw, 580px); min-height: 76px; border-radius: 24px; padding: 14px 18px; display: flex; align-items: center; gap: 16px; z-index: 3; box-shadow: 0 22px 58px rgba(40,42,55,.055), 0 5px 20px rgba(40,42,55,.018), inset 0 1px 0 rgba(255,255,255,.76); }
 .response-avatar { width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center; border-radius: 50%; background: #ffffffb3; box-shadow: 0 0 20px 5px #ffffff85; }

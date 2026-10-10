@@ -48,29 +48,27 @@ export function createCoreField({radius=112}={}) {
         float sdf=max(outerSdf,-material.z);
         float black=1.-smoothstep(-.46,.46,sdf);
         float r=length(world),angle=atan(world.y,world.x);
+        // A stable bright side belongs to the light flow, never to the black body.
+        float bright=pow(.5+.5*cos(angle+2.35),1.65);
         float listenWave=.5+.5*sin(u_time*3.2);
-        float stateBreath=1.+u_listening*(.06+.17*listenWave)+u_thinking*.045;
-        float folds=sin(angle*7.+u_time*.43)*1.6+
-          sin(angle*13.-u_time*.29)*.92+sin(angle*23.+u_time*.19)*.38;
-        float crest=outerSdf-2.2-folds;
-        float arcs=pow(.5+.5*cos(angle-.35-u_time*.035),23.)+
-          pow(.5+.5*cos(angle-2.08+u_time*.029),19.)+
-          pow(.5+.5*cos(angle-3.88-u_time*.033),28.)+
-          pow(.5+.5*cos(angle-5.23+u_time*.028),25.);
-        arcs=clamp(arcs,0.,1.);
-        float moving=pow(.5+.5*cos(angle-u_time*(.28+u_thinking*.46)),190.);
-        float secondary=pow(.5+.5*cos(angle+u_time*.17-2.4),280.)*.38;
-        float highlight=clamp(moving+secondary,0.,1.);
-        float patch=clamp(.15+.74*arcs+.16*sin(angle*4.+u_time*.18)+.11*sin(angle*9.-u_time*.24),.035,1.);
-        float shoulder=(exp(-pow((outerSdf-8.4-folds*.9)/(4.1+arcs*1.8),2.))*.50+
-          exp(-pow((outerSdf-15.)/11.,2.))*.075)*patch;
-        float breath=stateBreath*(1.+.09*clamp(u_energy,0.,1.)*(.7+.3*sin(u_time*1.4)));
-        float glow=exp(-pow((outerSdf-2.5-folds*.55)/(3.6*breath*(.73+.53*arcs)),2.))*(.28+.68*arcs);
-        float caustic=exp(-crest*crest/((1.3+arcs*4.5)*breath))*(.25+.74*arcs);
-        float narrow=exp(-pow((outerSdf-1.6-folds*.82)/.82,2.))*highlight*.95;
-        float stray=exp(-pow((outerSdf-7.0-folds*2.0)/.78,2.))*(.04+.63*arcs)*arcs;
+        float intensity=1.+u_listening*(.035+.12*listenWave)+u_thinking*.055+clamp(u_energy,0.,1.)*.055;
+        float lightRipple=sin(angle*17.-u_time*.36)*.15+sin(angle*29.+u_time*.22)*.06;
+        float primaryDistance=outerSdf-1.55-lightRipple;
+        float primary=exp(-pow(primaryDistance/.58,2.))*(.10+.83*bright)*intensity;
+        float soft=exp(-pow(primaryDistance/1.45,2.))*(.012+.075*bright)*intensity;
+        float secondary=exp(-pow((outerSdf-5.6-lightRipple*.55)/.33,2.))*(.025+.12*bright);
+        float tertiary=exp(-pow((outerSdf-9.3-lightRipple*.35)/.27,2.))*.040*bright;
+        // Differential angular speeds shear short streaks through the fixed hot side.
+        float speed=.54;
+        float streakA=pow(.5+.5*cos(angle-u_time*speed-1.3),420.);
+        float streakB=pow(.5+.5*cos(angle-u_time*(speed*.76)+1.9),610.);
+        float streakC=pow(.5+.5*cos(angle-u_time*(speed*1.18)-3.6),510.);
+        float streak=exp(-pow((primaryDistance+.20)/.25,2.))*(streakA+streakC*.54)*bright*.44+
+          exp(-pow((outerSdf-3.15-lightRipple*.65)/.30,2.))*streakB*bright*.31;
+        // A narrow, localized contrast shoulder makes white light legible on ivory.
+        float shoulder=exp(-pow((outerSdf-3.8-lightRipple*.65)/1.45,2.))*(.018+.19*bright);
         float exterior=smoothstep(u_radius-1.,u_radius+.6,r);
-        float white=clamp(glow+caustic*(1.-glow)+narrow*(1.-glow)+stray*(1.-glow),0.,1.)*exterior;
+        float white=clamp(primary+soft*(1.-primary)+secondary+tertiary+streak,0.,1.)*exterior;
         float shade=shoulder*exterior;
         if(u_complete>=0.) {
           float progress=clamp(u_complete,0.,1.);
@@ -134,7 +132,7 @@ export function createCoreField({radius=112}={}) {
     ctx.beginPath();
     for(let i=0;i<=192;i++){
       const a=start+i/192*(end-start);
-      const irregular=Math.sin(a*7+time*.43)*1.6+Math.sin(a*13-time*.29)*.92+Math.sin(a*23+time*.19)*.38;
+      const irregular=Math.sin(a*17-time*.36)*.15+Math.sin(a*29+time*.22)*.06;
       const r=radius+offset+irregular;
       const p=fluid.displacePoint(Math.cos(a)*r,Math.sin(a)*r);
       if(!i)ctx.moveTo(...p);else ctx.lineTo(...p);
@@ -156,26 +154,43 @@ export function createCoreField({radius=112}={}) {
       ctx.arc(0,0,radius-.8,0,TAU,true);ctx.clip('evenodd');
       const listening=Math.max(0,Math.min(1,visual.listening||0));
       const thinking=Math.max(0,Math.min(1,visual.thinking||0));
-      const breath=1+listening*(.06+.17*(.5+.5*Math.sin(state.time*3.2)))+thinking*.045;
-      // A faint broken base supports separate pearly arcs, never a thick outline.
-      contour(2.4,state.time);ctx.strokeStyle='rgba(255,255,255,.23)';ctx.lineWidth=1.25;
-      ctx.shadowColor='rgba(255,255,255,.28)';ctx.shadowBlur=6*breath;ctx.stroke();
-      for(const [center,width]of[[.35,.35],[2.08,.41],[3.88,.32],[5.23,.34]]){
-        const shift=center+Math.sin(state.time*.04+center)*.11;
-        contour(8.4,state.time,shift-width*1.3,shift+width*1.3);
-        ctx.strokeStyle='rgba(64,70,73,.23)';ctx.lineWidth=6.0;
-        ctx.shadowColor='rgba(77,83,85,.12)';ctx.shadowBlur=8;ctx.stroke();
-        contour(2.1,state.time,shift-width,shift+width);
-        ctx.strokeStyle='rgba(255,255,255,.96)';ctx.lineWidth=3.7*breath;
-        ctx.shadowColor='rgba(255,255,255,.93)';ctx.shadowBlur=10*breath;ctx.stroke();
-        contour(6.7,state.time,shift-width*.73,shift+width*.73);
-        ctx.strokeStyle='rgba(255,255,255,.60)';ctx.lineWidth=.8;ctx.shadowBlur=3;ctx.stroke();
-      }
-      const moving=state.time*(.28+thinking*.46);
-      for(const [center,width,alpha]of[[moving,.095,.95],[2.4-state.time*.17,.070,.42]]) {
-        contour(1.7,state.time,center-width,center+width);
-        ctx.strokeStyle=`rgba(255,255,255,${alpha})`;ctx.lineWidth=1.3;
-        ctx.shadowColor='rgba(255,255,255,.68)';ctx.shadowBlur=4;ctx.stroke();
+      const listenWave=.5+.5*Math.sin(state.time*3.2);
+      const intensity=1+listening*(.035+.12*listenWave)+thinking*.055+Math.max(0,Math.min(1,energy))*.055;
+      const lightGradient=(low,high,color='255,255,255')=>{
+        const direction=-2.35,reach=radius+12;
+        const dx=Math.cos(direction)*reach,dy=Math.sin(direction)*reach;
+        const gradient=ctx.createLinearGradient(-dx,-dy,dx,dy);
+        for(const t of [0,.15,.35,.55,.75,1]) {
+          const brightness=t**1.65;
+          gradient.addColorStop(t,`rgba(${color},${Math.min(1,low+(high-low)*brightness)})`);
+        }
+        return gradient;
+      };
+      // Narrow light and localized graphite contrast replace the broad bevel.
+      contour(3.8,state.time);ctx.strokeStyle=lightGradient(.018,.208,'66,72,75');ctx.lineWidth=2.10;
+      ctx.shadowColor='rgba(65,72,75,.05)';ctx.shadowBlur=1.4;ctx.stroke();
+      contour(1.55,state.time);ctx.strokeStyle=lightGradient(.012,.087*intensity);ctx.lineWidth=2.55;
+      ctx.shadowColor='rgba(255,255,255,.09)';ctx.shadowBlur=1.8;ctx.stroke();
+      contour(1.55,state.time);ctx.strokeStyle=lightGradient(.10,.93*intensity);ctx.lineWidth=1.03;
+      ctx.shadowBlur=0;ctx.stroke();
+      contour(5.6,state.time);ctx.strokeStyle=lightGradient(.025,.145);ctx.lineWidth=.55;ctx.stroke();
+      contour(9.3,state.time);ctx.strokeStyle=lightGradient(0,.040);ctx.lineWidth=.45;ctx.stroke();
+      const speed=.54;
+      for(const [center,offset,width,alpha]of[
+        [state.time*speed+1.3,1.35,.058,.44],
+        [state.time*speed*.76-1.9,3.15,.048,.31],
+        [state.time*speed*1.18+3.6,1.35,.053,.24],
+      ]) {
+        const bright=(.5+.5*Math.cos(center+2.35))**1.65;
+        // Fade both tips so each streak reads as a current rather than a specular dot.
+        const from=center-width,to=center+width;
+        const a=fluid.displacePoint(Math.cos(from)*(radius+offset),Math.sin(from)*(radius+offset));
+        const b=fluid.displacePoint(Math.cos(to)*(radius+offset),Math.sin(to)*(radius+offset));
+        const streak=ctx.createLinearGradient(a[0],a[1],b[0],b[1]);
+        streak.addColorStop(0,'rgba(255,255,255,0)');
+        streak.addColorStop(.5,`rgba(255,255,255,${alpha*bright})`);
+        streak.addColorStop(1,'rgba(255,255,255,0)');
+        contour(offset,state.time,from,to);ctx.strokeStyle=streak;ctx.lineWidth=.55;ctx.stroke();
       }
       if(Number.isFinite(visual.completeProgress)&&visual.completeProgress>=0) {
         const progress=Math.max(0,Math.min(1,visual.completeProgress));
