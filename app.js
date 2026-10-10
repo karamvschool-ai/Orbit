@@ -1,4 +1,5 @@
 import { createSingularity } from './singularity.js';
+import { playStartup } from './startup.js';
 
 const $ = (selector) => document.querySelector(selector);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -823,3 +824,5 @@ window.addEventListener('pagehide', (event) => {
   document.removeEventListener('pointerleave', clearSurfaceLight);
   window.removeEventListener('blur', clearSurfaceLight);
 });
+
+playStartup(app);

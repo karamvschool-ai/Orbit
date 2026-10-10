@@ -501,3 +501,17 @@ kbd { font: inherit; background: #eaeaec; border-radius: 4px; padding: 3px 6px; 
   .orbit-app :is(.round-button:hover, .round-button:active, .nav-button:hover, .plain-button:hover, .page-primary:hover) { transform: none; }
   .orbit-app .task-row:active .task-copy { translate: none; }
 }
+
+/* A single cinematic timeline: darkness → trace → lensed disk → daylight. */
+#startup { overflow: hidden; pointer-events: none; animation: startup-exit 1.5s 5.1s cubic-bezier(.2,.7,.3,1) both; }
+.startup-position { position: absolute; left: var(--intro-x,49.5vw); top: var(--intro-y,46vh); width: 0; height: 0; }
+.startup-trace { position: absolute; width: calc(var(--intro-radius,112px) * 2.142857); height: calc(var(--intro-radius,112px) * 2.142857); transform: translate(-50%,-50%) rotate(-90deg); overflow: visible; }
+.startup-trace circle { fill: none; stroke: #fff; stroke-width: 1.25; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; filter: drop-shadow(0 0 3px #fff); animation: startup-trace 2.2s .45s cubic-bezier(.4,0,.25,1) both, startup-ring-fade 1s 3s both; }
+.startup-hole { position: absolute; width: calc(var(--intro-radius,112px) * 8.667); height: auto; max-width: none; transform: translate(-50%,-50%); filter: grayscale(1) brightness(2.1) contrast(1.15); opacity: 0; mix-blend-mode: screen; animation: startup-form 2.1s 2.35s cubic-bezier(.18,.75,.25,1) both; }
+html.is-starting .orbit-app { animation: startup-page 1.5s 5.1s ease both; }
+@keyframes startup-trace { 0% { opacity: 0; stroke-dashoffset: 1; } 1% { opacity: 1; } 100% { opacity: 1; stroke-dashoffset: 0; } }
+@keyframes startup-ring-fade { to { opacity: 0; } }
+@keyframes startup-form { from { opacity: 0; clip-path: ellipse(12% 20% at 50% 50%); filter: grayscale(1) brightness(3) blur(9px); } to { opacity: 1; clip-path: ellipse(65% 65% at 50% 50%); filter: grayscale(1) brightness(2.1) contrast(1.15) blur(0); } }
+@keyframes startup-exit { 0% { opacity: 1; } 40% { opacity: 1; background: #000; } 100% { opacity: 0; visibility: hidden; } }
+@keyframes startup-page { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { #startup { display: none; } html.is-starting .orbit-app { opacity: 1; animation: none; } }

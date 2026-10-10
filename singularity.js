@@ -1,5 +1,6 @@
 /* Orbit's singularity combines animated geometry with shaded orbital sprites. */
 import { createCoreField } from './core-field.js';
+import { sceneLayout } from './scene-layout.js';
 const TAU = Math.PI * 2;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const mix = (a, b, t) => a + (b - a) * t;
@@ -164,9 +165,8 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
     canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
-    scale = width <= 900 ? Math.min(width * .0015, height / 850, 1) : Math.min(width / 1672, height / 941);
-    centerX = width * (width <= 900 ? .50 : .495);
-    centerY = height * (width <= 900 ? .42 : .46);
+    const layout = sceneLayout(width, height);
+    scale = layout.scale; centerX = layout.x; centerY = layout.y;
     if (pointer.clientX !== null) {
       pointer.targetX = (pointer.clientX - centerX) / scale;
       pointer.targetY = (pointer.clientY - centerY) / scale;
