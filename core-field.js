@@ -41,6 +41,10 @@ export function createCoreField({radius=112}={}) {
           b*factor/u_stretch*vec2(-u_direction.y,u_direction.x);
         return vec3(source,r-h);
       }
+      float lightStreak(float angle,float center,float distance,float offset,float width,float extent) {
+        float arc=atan(sin(angle-center),cos(angle-center));
+        return exp(-pow(arc/extent,2.))*exp(-pow((distance-offset)/width,2.));
+      }
       void main(){
         vec2 world=(vec2(v_uv.x,1.-v_uv.y)-.5)*u_bounds*2.;
         vec3 material=transported(world);
@@ -51,25 +55,43 @@ export function createCoreField({radius=112}={}) {
         // A stable bright side belongs to the light flow, never to the black body.
         float bright=pow(.5+.5*cos(angle+2.35),1.65);
         float listenWave=.5+.5*sin(u_time*3.2);
-        float intensity=1.+u_listening*(.035+.12*listenWave)+u_thinking*.055+clamp(u_energy,0.,1.)*.055;
+        float intensity=1.+u_listening*(.12+.24*listenWave)+u_thinking*.14+clamp(u_energy,0.,1.)*.09;
         float lightRipple=sin(angle*17.-u_time*.36)*.15+sin(angle*29.+u_time*.22)*.06;
         float primaryDistance=outerSdf-1.55-lightRipple;
-        float primary=exp(-pow(primaryDistance/.58,2.))*(.10+.83*bright)*intensity;
-        float soft=exp(-pow(primaryDistance/1.45,2.))*(.012+.075*bright)*intensity;
-        float secondary=exp(-pow((outerSdf-5.6-lightRipple*.55)/.33,2.))*(.025+.12*bright);
-        float tertiary=exp(-pow((outerSdf-9.3-lightRipple*.35)/.27,2.))*.040*bright;
-        // Differential angular speeds shear short streaks through the fixed hot side.
-        float speed=.54;
-        float streakA=pow(.5+.5*cos(angle-u_time*speed-1.3),420.);
-        float streakB=pow(.5+.5*cos(angle-u_time*(speed*.76)+1.9),610.);
-        float streakC=pow(.5+.5*cos(angle-u_time*(speed*1.18)-3.6),510.);
-        float streak=exp(-pow((primaryDistance+.20)/.25,2.))*(streakA+streakC*.54)*bright*.44+
-          exp(-pow((outerSdf-3.15-lightRipple*.65)/.30,2.))*streakB*bright*.31;
-        // A narrow, localized contrast shoulder makes white light legible on ivory.
-        float shoulder=exp(-pow((outerSdf-3.8-lightRipple*.65)/1.45,2.))*(.018+.19*bright);
+        float primary=exp(-pow(primaryDistance/.58,2.))*(.12+.88*bright)*intensity;
+        float soft=exp(-pow(primaryDistance/1.45,2.))*(.020+.115*bright)*intensity;
+        float arcBreak=.32+.68*pow(.5+.5*cos(angle*3.-u_time*.19),2.);
+        float secondary=exp(-pow((outerSdf-5.6-lightRipple*.55)/.52,2.))*(.05+.58*bright)*arcBreak;
+        float tertiary=exp(-pow((outerSdf-9.3-lightRipple*.35)/.44,2.))*(.018+.40*bright)*arcBreak;
+        float outerArc=exp(-pow((outerSdf-16.-lightRipple*.25)/.38,2.))*(.008+.25*bright)*arcBreak;
+        // More and longer currents move along separate layers, with fixed rates.
+        // State acceleration comes from the already accumulated scene phase.
+        float streak=lightStreak(angle,u_time*.54+1.3,outerSdf,1.35,.34,.14)*.86+
+          lightStreak(angle,u_time*.41-1.9,outerSdf,3.15,.43,.19)*.62+
+          lightStreak(angle,u_time*.64+3.6,outerSdf,5.6,.48,.20)*.95+
+          lightStreak(angle,u_time*.33-.4,outerSdf,9.3,.43,.24)*.82+
+          lightStreak(angle,u_time*.47+2.2,outerSdf,16.,.47,.26)*.73+
+          lightStreak(angle,u_time*.28-2.7,outerSdf,21.6,.54,.28)*.61;
+        streak*=.16+.84*bright;
+        // Contrast sits in distinct thin layers; there is no broad spherical bevel.
+        float shoulder=exp(-pow((outerSdf-3.8-lightRipple*.65)/1.10,2.))*(.035+.36*bright);
+        shoulder+=exp(-pow((outerSdf-6.7)/.65,2.))*(.016+.23*bright)*arcBreak;
+        shoulder+=exp(-pow((outerSdf-10.4)/.64,2.))*(.009+.18*bright)*arcBreak;
+        shoulder+=exp(-pow((outerSdf-17.2)/.70,2.))*.11*bright*arcBreak;
         float exterior=smoothstep(u_radius-1.,u_radius+.6,r);
-        float white=clamp(primary+soft*(1.-primary)+secondary+tertiary+streak,0.,1.)*exterior;
+        float white=clamp(primary+soft*(1.-primary)+secondary+tertiary+outerArc+streak,0.,1.)*exterior;
         float shade=shoulder*exterior;
+        // Two staggered, broken photon echoes expand beyond the fixed horizon.
+        for(int k=0;k<2;k++) {
+          float progress=fract(u_time*.24+float(k)*.5);
+          float envelope=pow(max(0.,sin(progress*3.14159265)),.85);
+          float echoMask=(.18+.68*bright)*(.37+.63*pow(.5+.5*cos(angle*3.+float(k)*1.7),2.));
+          float echoDistance=outerSdf-15.-progress*39.;
+          float darkEcho=exp(-pow((echoDistance-1.5)/.78,2.))*envelope*echoMask*.39;
+          float whiteEcho=exp(-pow(echoDistance/.62,2.))*envelope*echoMask*.64;
+          shade=clamp(shade+darkEcho*exterior,0.,1.);
+          white=clamp(white+whiteEcho*exterior,0.,1.);
+        }
         if(u_complete>=0.) {
           float progress=clamp(u_complete,0.,1.);
           float envelope=sin(progress*3.14159265)*pow(1.-progress,.7)*.42;
@@ -130,8 +152,9 @@ export function createCoreField({radius=112}={}) {
   let disposed=false;
   function contour(offset,time,start=0,end=TAU){
     ctx.beginPath();
-    for(let i=0;i<=192;i++){
-      const a=start+i/192*(end-start);
+    const samples=Math.max(4,Math.ceil(192*Math.abs(end-start)/TAU));
+    for(let i=0;i<=samples;i++){
+      const a=start+i/samples*(end-start);
       const irregular=Math.sin(a*17-time*.36)*.15+Math.sin(a*29+time*.22)*.06;
       const r=radius+offset+irregular;
       const p=fluid.displacePoint(Math.cos(a)*r,Math.sin(a)*r);
@@ -155,9 +178,9 @@ export function createCoreField({radius=112}={}) {
       const listening=Math.max(0,Math.min(1,visual.listening||0));
       const thinking=Math.max(0,Math.min(1,visual.thinking||0));
       const listenWave=.5+.5*Math.sin(state.time*3.2);
-      const intensity=1+listening*(.035+.12*listenWave)+thinking*.055+Math.max(0,Math.min(1,energy))*.055;
-      const lightGradient=(low,high,color='255,255,255')=>{
-        const direction=-2.35,reach=radius+12;
+      const intensity=1+listening*(.12+.24*listenWave)+thinking*.14+Math.max(0,Math.min(1,energy))*.09;
+      const lightGradient=(low,high,color='255,255,255',reach=radius+12)=>{
+        const direction=-2.35;
         const dx=Math.cos(direction)*reach,dy=Math.sin(direction)*reach;
         const gradient=ctx.createLinearGradient(-dx,-dy,dx,dy);
         for(const t of [0,.15,.35,.55,.75,1]) {
@@ -166,31 +189,61 @@ export function createCoreField({radius=112}={}) {
         }
         return gradient;
       };
-      // Narrow light and localized graphite contrast replace the broad bevel.
-      contour(3.8,state.time);ctx.strokeStyle=lightGradient(.018,.208,'66,72,75');ctx.lineWidth=2.10;
-      ctx.shadowColor='rgba(65,72,75,.05)';ctx.shadowBlur=1.4;ctx.stroke();
-      contour(1.55,state.time);ctx.strokeStyle=lightGradient(.012,.087*intensity);ctx.lineWidth=2.55;
-      ctx.shadowColor='rgba(255,255,255,.09)';ctx.shadowBlur=1.8;ctx.stroke();
-      contour(1.55,state.time);ctx.strokeStyle=lightGradient(.10,.93*intensity);ctx.lineWidth=1.03;
+      // Primary remains sharp; separated graphite supports reveal the white light.
+      contour(3.8,state.time);ctx.strokeStyle=lightGradient(.035,.395,'56,63,67');ctx.lineWidth=1.80;
+      ctx.shadowColor='rgba(65,72,75,.07)';ctx.shadowBlur=1.2;ctx.stroke();
+      contour(1.55,state.time);ctx.strokeStyle=lightGradient(.020,.135*intensity);ctx.lineWidth=2.55;
+      ctx.shadowColor='rgba(255,255,255,.13)';ctx.shadowBlur=1.9;ctx.stroke();
+      contour(1.55,state.time);ctx.strokeStyle=lightGradient(.12,intensity);ctx.lineWidth=1.03;
       ctx.shadowBlur=0;ctx.stroke();
-      contour(5.6,state.time);ctx.strokeStyle=lightGradient(.025,.145);ctx.lineWidth=.55;ctx.stroke();
-      contour(9.3,state.time);ctx.strokeStyle=lightGradient(0,.040);ctx.lineWidth=.45;ctx.stroke();
-      const speed=.54;
-      for(const [center,offset,width,alpha]of[
-        [state.time*speed+1.3,1.35,.058,.44],
-        [state.time*speed*.76-1.9,3.15,.048,.31],
-        [state.time*speed*1.18+3.6,1.35,.053,.24],
+      // Draw each secondary image in angular segments so its edge breaks naturally.
+      for(const [offset,width,low,high,dark]of[[5.6,.87,.05,.63,.246],[9.3,.74,.018,.418,.189],[16,.64,.008,.258,.11]]) {
+        const graphite=lightGradient(.01,dark,'56,63,67',radius+offset+4);
+        const photon=lightGradient(low,high,'255,255,255',radius+offset+4);
+        for(let segment=0;segment<36;segment++) {
+          const start=segment/36*TAU,end=(segment+1)/36*TAU,angle=(start+end)*.5;
+          const arcBreak=.32+.68*(.5+.5*Math.cos(angle*3-state.time*.19))**2;
+          if(arcBreak<.005)continue;
+          ctx.globalAlpha=arcBreak;
+          contour(offset+1.1,state.time,start,end);ctx.strokeStyle=graphite;ctx.lineWidth=1.10;ctx.stroke();
+          contour(offset,state.time,start,end);ctx.strokeStyle=photon;ctx.lineWidth=width;ctx.stroke();
+        }
+        ctx.globalAlpha=1;
+      }
+      for(const [center,offset,width,alpha,lineWidth]of[
+        [state.time*.54+1.3,1.35,.14,.86,.60],
+        [state.time*.41-1.9,3.15,.19,.62,.73],
+        [state.time*.64+3.6,5.6,.20,.95,.80],
+        [state.time*.33-.4,9.3,.24,.82,.73],
+        [state.time*.47+2.2,16,.26,.73,.80],
+        [state.time*.28-2.7,21.6,.28,.61,.90],
       ]) {
-        const bright=(.5+.5*Math.cos(center+2.35))**1.65;
-        // Fade both tips so each streak reads as a current rather than a specular dot.
-        const from=center-width,to=center+width;
+        const bright=.16+.84*(.5+.5*Math.cos(center+2.35))**1.65;
+        const from=center-width*1.8,to=center+width*1.8;
         const a=fluid.displacePoint(Math.cos(from)*(radius+offset),Math.sin(from)*(radius+offset));
         const b=fluid.displacePoint(Math.cos(to)*(radius+offset),Math.sin(to)*(radius+offset));
         const streak=ctx.createLinearGradient(a[0],a[1],b[0],b[1]);
         streak.addColorStop(0,'rgba(255,255,255,0)');
+        streak.addColorStop(.22,`rgba(255,255,255,${alpha*bright*.37})`);
         streak.addColorStop(.5,`rgba(255,255,255,${alpha*bright})`);
+        streak.addColorStop(.78,`rgba(255,255,255,${alpha*bright*.37})`);
         streak.addColorStop(1,'rgba(255,255,255,0)');
-        contour(offset,state.time,from,to);ctx.strokeStyle=streak;ctx.lineWidth=.55;ctx.stroke();
+        contour(offset,state.time,from,to);ctx.strokeStyle=streak;ctx.lineWidth=lineWidth;
+        ctx.shadowColor=`rgba(255,255,255,${alpha*bright*.26})`;ctx.shadowBlur=1.5;ctx.stroke();ctx.shadowBlur=0;
+      }
+      for(let echo=0;echo<2;echo++) {
+        const progress=(state.time*.24+echo*.5)%1;
+        const envelope=Math.max(0,Math.sin(progress*Math.PI))**.85;
+        if(envelope<.005)continue;
+        const offset=15+progress*39;
+        for(let segment=0;segment<32;segment++) {
+          const start=segment/32*TAU,end=(segment+1)/32*TAU,angle=(start+end)*.5;
+          const bright=(.5+.5*Math.cos(angle+2.35))**1.65;
+          const mask=(.18+.68*bright)*(.37+.63*(.5+.5*Math.cos(angle*3+echo*1.7))**2)*envelope;
+          if(mask<.005)continue;
+          contour(offset+1.5,state.time,start,end);ctx.strokeStyle=`rgba(56,63,67,${mask*.39})`;ctx.lineWidth=1.30;ctx.stroke();
+          contour(offset,state.time,start,end);ctx.strokeStyle=`rgba(255,255,255,${mask*.64})`;ctx.lineWidth=1.04;ctx.stroke();
+        }
       }
       if(Number.isFinite(visual.completeProgress)&&visual.completeProgress>=0) {
         const progress=Math.max(0,Math.min(1,visual.completeProgress));
