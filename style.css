@@ -424,6 +424,8 @@ kbd { font: inherit; background: #eaeaec; border-radius: 4px; padding: 3px 6px; 
 :is(.request-island, .response-island, .composer, .task-panel) {
   --glass-light: 0;
   background-image:
+    radial-gradient(ellipse 75% 180% at var(--scene-light-position, 30%) 0%, rgba(255,255,255,var(--scene-reflection, .08)), transparent 73%),
+    linear-gradient(115deg, transparent 18%, rgba(107,116,128,calc(var(--scene-reflection, .08) * .24)) 49%, transparent 78%),
     linear-gradient(150deg, rgba(255,255,255,.18), transparent 35%, transparent 72%, rgba(217,218,225,.025)),
     radial-gradient(ellipse 210px 125px at var(--light-x, 50%) var(--light-y, 50%), rgba(255,255,255,var(--glass-light)), transparent 76%);
 }

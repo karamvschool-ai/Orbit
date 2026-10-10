@@ -29,10 +29,54 @@ function sampleCurve(points, t) {
   return [component(0), component(1)];
 }
 
-export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () => true, getInteraction = () => true, getState = () => 'idle' } = {}) {
+// Refract the actual rendered strands, rather than drawing another wire ring.
+function createRefractionPass() {
+  const source=document.createElement('canvas'),output=document.createElement('canvas');
+  source.width=source.height=output.width=output.height=384;
+  const capture=source.getContext('2d'),gl=output.getContext('webgl',{alpha:true,premultipliedAlpha:false,depth:false});
+  const shaders=[];let program,buffer,texture,timeUniform;
+  const dispose=()=>{if(!gl)return;shaders.forEach(s=>gl.deleteShader(s));if(program)gl.deleteProgram(program);if(buffer)gl.deleteBuffer(buffer);if(texture)gl.deleteTexture(texture);};
+  let ready=false;
+  if(gl)try {
+    const compile=(type,text)=>{const shader=gl.createShader(type);shaders.push(shader);gl.shaderSource(shader,text);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error('Refraction unavailable');return shader;};
+    program=gl.createProgram();
+    gl.attachShader(program,compile(gl.VERTEX_SHADER,'attribute vec2 p; varying vec2 uv; void main(){uv=p*.5+.5;gl_Position=vec4(p,0.,1.);}'));
+    gl.attachShader(program,compile(gl.FRAGMENT_SHADER,`precision mediump float; varying vec2 uv; uniform sampler2D image; uniform float time;
+      void main(){vec2 w=(vec2(uv.x,1.-uv.y)-.5)*440.;float r=length(w),a=atan(w.y,w.x);
+      float mask=smoothstep(118.,124.,r)*(1.-smoothstep(151.,165.,r));
+      float sr=174.+(r-126.)*1.75;
+      float sa=a+.09*sin(a*3.+time*.22)*exp(-pow((r-135.)/21.,2.));
+      vec2 sampleUv=vec2(.5+cos(sa)*sr/440.,.5-sin(sa)*sr/440.);
+      vec4 light=texture2D(image,sampleUv);
+      gl_FragColor=vec4(light.rgb,light.a*mask*.48);}`));
+    gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error('Refraction unavailable');
+    gl.useProgram(program);buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
+    const position=gl.getAttribLocation(program,'p');gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
+    texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);
+    for(const parameter of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,parameter,gl.LINEAR);
+    for(const parameter of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,parameter,gl.CLAMP_TO_EDGE);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.uniform1i(gl.getUniformLocation(program,'image'),0);
+    timeUniform=gl.getUniformLocation(program,'time');gl.viewport(0,0,384,384);ready=true;
+  }catch{dispose();}
+  return {
+    draw(ctx,scene,cx,cy,scale,dpr,time){
+      if(!capture)return;
+      capture.clearRect(0,0,384,384);
+      capture.drawImage(scene,(cx-220*scale)*dpr,(cy-220*scale)*dpr,440*scale*dpr,440*scale*dpr,0,0,384,384);
+      if(ready){gl.bindTexture(gl.TEXTURE_2D,texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,source);gl.uniform1f(timeUniform,time);gl.drawArrays(gl.TRIANGLES,0,6);ctx.drawImage(output,-220,-220,440,440);}
+      else {ctx.save();ctx.beginPath();ctx.arc(0,0,157,0,TAU);ctx.arc(0,0,122,0,TAU,true);ctx.clip('evenodd');ctx.globalAlpha=.24;ctx.rotate(.025*Math.sin(time*.22));ctx.drawImage(source,-185,-185,370,370);ctx.restore();}
+    },
+    destroy(){if(ready)dispose();source.width=output.width=0;},
+  };
+}
+
+export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () => true, getInteraction = () => true, getState = () => 'idle', onLight = () => {} } = {}) {
   const ctx = canvas.getContext('2d', { alpha: true });
   if (!ctx) return { cue() {}, destroy() {} };
   const coreField = createCoreField();
+  const refraction=createRefractionPass();
+  let surge=0,surgeProgress=0,lightTime=-Infinity;
   const orbitalImage = new Image();
   orbitalImage.decoding = 'async';
   orbitalImage.src = new URL('./assets/orbital-sphere.png',import.meta.url).href;
@@ -170,7 +214,10 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
   }
   function filamentWarp(x,y,strength=1,out=scratch) {
     const lensed=lensPoint(x,y,strength,out);
-    return warp(lensed[0],lensed[1],strength,out);
+    const lx=lensed[0],ly=lensed[1],distance=Math.hypot(x,y);
+    const depth=clamp((distance-145)/360,0,1);
+    const px=clamp(pointer.x/420,-1,1)*pointer.presence,py=clamp(pointer.y/300,-1,1)*pointer.presence;
+    return warp(lx+px*depth*9,ly+py*depth*7,strength,out);
   }
   function ribbonEdge(ribbon, j, offset, flutter = 0) {
     const s = ribbon.surface, i = j * 12;
@@ -241,7 +288,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
         const outerDrift=Math.sin(time*.52+ribbon.phase*.6);
         const innerDrift=Math.sin(time*1.44+ribbon.phase*.6);
         const displacement=(mix(outerWave,innerWave,inner)*ribbon.bend*(1.78-inner*.88) +
-          mix(outerDrift,innerDrift,inner)*(26+breath)*(1-inner*.54))*envelope*(1+energy*.16);
+          mix(outerDrift,innerDrift,inner)*(26+breath)*(1-inner*.54))*envelope*(1-surge*.30)*(1+energy*.16);
         s[i]=base[0]-dy/length*displacement;s[i+1]=base[1]+dx/length*displacement;
         s[i+2]=t;s[i+3]=envelope;
       }
@@ -278,7 +325,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
           const i=j*12;ctx.lineTo(mix(s[i+8],s[i+10],high),mix(s[i+9],s[i+11],high));
         }
         ctx.lineTo(mix(s[8],s[10],high),mix(s[9],s[11],high));
-        ctx.closePath();ctx.fillStyle=shade;ctx.fill();
+        ctx.closePath();ctx.fillStyle=shade;ctx.globalAlpha=major?.80:.48;ctx.fill();ctx.globalAlpha=1;
       }
       for(let strand=0;strand<ribbon.strands;strand++) {
         if(width<=600 && strand%2 && strand!==Math.floor(ribbon.strands*.38))continue;
@@ -337,7 +384,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     const x=cos*radius;
     // The rear plane appears again above the shadow; its near-side image is
     // compressed below it. Both are drawn before the core masks the scene.
-    const y=sin*(rear?54:44)+(rear?-72:65)*depth**1.7+track*1.3+shear;
+    const y=sin*(rear?57:39)+(rear?-77:67)*depth**1.7+track*(rear?2.4:1.4)+shear;
     const cosine=Math.cos(DISK_TILT),sine=Math.sin(DISK_TILT);
     const lensed=lensPoint(x*cosine-y*sine,x*sine+y*cosine,.93,out);
     const apparentRadius=Math.hypot(lensed[0],lensed[1])||1;
@@ -346,55 +393,32 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
   }
   function drawAccretion(time) {
     const count=width<=600?54:86;
-    ctx.lineCap='round';
-    const trace=(buffer,from=0,to=count)=>{
-      ctx.beginPath();ctx.moveTo(buffer[from*2],buffer[from*2+1]);
-      for(let j=from+1;j<=to;j++)ctx.lineTo(buffer[j*2],buffer[j*2+1]);
-    };
-    const shade=(buffer,alpha,white=false)=>{
-      const first=buffer[0]<buffer[count*2]?0:count*2,last=first?0:count*2;
-      const gradient=ctx.createLinearGradient(buffer[first],buffer[first+1],buffer[last],buffer[last+1]);
-      const rgb=white?'255,255,255':'30,35,39';
-      const peak=.2+.5*(.5+.5*Math.cos(BRIGHT_ANGLE));
-      for(const [position,weight] of [[0,0],[.10,.32],[peak,1],[.47,.78],[.70,.36],[.91,.12],[1,0]])
-        gradient.addColorStop(position,`rgba(${rgb},${alpha*weight})`);
-      return gradient;
-    };
+    // Continuous nested skins form a single folded volume. Light veins sit on it.
+    const skins=[['47,53,58',.12],['47,53,58',.26],['27,32,36',.40],['255,255,255',.71],['82,90,95',.22],['255,255,255',.19]];
     for(const rear of [true,false]) {
-      const start=rear?Math.PI:0;
-      const tracks=rear?7:4;
+      const start=rear?Math.PI:0,tracks=rear?7:4;
       for(let track=0;track<tracks;track++) {
-        const offset=track-(tracks-1)/2,buffer=accretionBuffers[(rear?0:7)+track];
-        for(let j=0;j<=count;j++) {
-          const point=accretionPoint(start+j/count*Math.PI,offset,time,rear);
-          buffer[j*2]=point[0];buffer[j*2+1]=point[1];
-        }
-        const primary=rear&&(track===2||track===4);
-        const alpha=rear?(primary?.72:.31):.20;
-        trace(buffer);ctx.lineWidth=primary?1.10:.55;
-        ctx.strokeStyle=shade(buffer,alpha);ctx.stroke();
-        if(rear&&track===3) {
-          // A graphite shoulder makes the narrow white current legible on ivory.
-          ctx.lineWidth=11.8;ctx.strokeStyle=shade(buffer,.27);ctx.stroke();
-          ctx.lineWidth=1.6;ctx.strokeStyle=shade(buffer,.96,true);ctx.stroke();
-        }
-        if(rear&&primary) {
-          const head=(time*(.19+track*.018)+track*.31)%1;
-          const from=Math.max(1,Math.floor(head*count)-6),to=Math.min(count-1,Math.floor(head*count));
-          if(to>from) {
-            trace(buffer,from,to);ctx.lineWidth=.95;
-            ctx.strokeStyle=`rgba(255,255,255,${Math.sin(head*Math.PI)*.46})`;ctx.stroke();
-          }
-        }
+        const buffer=accretionBuffers[(rear?0:7)+track],offset=track-(tracks-1)/2;
+        for(let j=0;j<=count;j++) {const q=accretionPoint(start+j/count*Math.PI,offset,time,rear);buffer[j*2]=q[0];buffer[j*2+1]=q[1];}
       }
-      // A selected second image, rather than another complete construction ring.
-      if(rear)for(const range of [[Math.PI*1.13,Math.PI*1.53],[Math.PI*1.63,Math.PI*1.88]]) {
-        ctx.beginPath();
-        for(let j=0;j<=40;j++) {
-          const q=accretionPoint(mix(range[0],range[1],j/40),1,time,true,scratch,-6);
-          if(!j)ctx.moveTo(q[0],q[1]);else ctx.lineTo(q[0],q[1]);
-        }
-        ctx.lineWidth=.45;ctx.strokeStyle='rgba(66,73,78,.14)';ctx.stroke();
+      for(let track=0;track<tracks-1;track++) {
+        const a=accretionBuffers[(rear?0:7)+track],b=accretionBuffers[(rear?0:7)+track+1];
+        const [rgb,opacity]=skins[rear?track:track+1];
+        const left=a[0]<a[count*2]?0:count*2,right=left?0:count*2;
+        const gradient=ctx.createLinearGradient(a[left],a[left+1],a[right],a[right+1]);
+        for(const [stop,weight] of [[0,0],[.12,.40],[.29,1],[.56,.65],[.83,.17],[1,0]])gradient.addColorStop(stop,`rgba(${rgb},${opacity*(rear?1:.42)*weight*(1+surge*.45)})`);
+        ctx.beginPath();ctx.moveTo(a[0],a[1]);for(let j=1;j<=count;j++)ctx.lineTo(a[j*2],a[j*2+1]);
+        for(let j=count;j>=0;j--)ctx.lineTo(b[j*2],b[j*2+1]);ctx.closePath();ctx.fillStyle=gradient;ctx.fill();
+      }
+      for(let vein=0;vein<(rear?4:2);vein++) {
+        const buffer=accretionBuffers[(rear?0:7)+(rear?vein+1:vein+1)];
+        const head=(time*(.17+vein*.03)+vein*.27)%1,from=Math.max(0,Math.floor(head*count)-14),to=Math.min(count,Math.ceil(head*count));
+        if(to<=from)continue;
+        const gradient=ctx.createLinearGradient(buffer[from*2],buffer[from*2+1],buffer[to*2],buffer[to*2+1]);
+        const alpha=Math.sin(head*Math.PI)*(rear?.90:.35);
+        gradient.addColorStop(0,'rgba(255,255,255,0)');gradient.addColorStop(1,`rgba(255,255,255,${alpha})`);
+        ctx.beginPath();ctx.moveTo(buffer[from*2],buffer[from*2+1]);for(let j=from+1;j<=to;j++)ctx.lineTo(buffer[j*2],buffer[j*2+1]);
+        ctx.lineWidth=.8+vein*.1;ctx.strokeStyle=gradient;ctx.stroke();
       }
     }
   }
@@ -408,6 +432,13 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     }
   }
   function drawGravityEffects(time) {
+    if(surge>0) {
+      const radius=126+surgeProgress*405;
+      ctx.save();ctx.globalAlpha=surge;
+      traceOrbit(radius,radius*.94,DISK_TILT,-3.03,2.8,.22);
+      ctx.lineWidth=2.4;ctx.strokeStyle='rgba(36,44,50,.17)';ctx.stroke();
+      ctx.lineWidth=.8;ctx.strokeStyle='rgba(255,255,255,.62)';ctx.stroke();ctx.restore();
+    }
     const count=width<=600?14:24,trailCount=width<=600?4:photonTrails.length;
     for(let n=0;n<trailCount;n++) {
       const trail=photonTrails[n],buffer=trail.points,head=trail.offset+time*trail.rate;
@@ -458,13 +489,13 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
       ctx.lineWidth = .42; ctx.stroke();
     }
     ctx.beginPath(); ctx.moveTo(0,-244); ctx.lineTo(0,237);
-    ctx.strokeStyle = 'rgba(66,70,74,.40)'; ctx.lineWidth = .45; ctx.stroke();
+    ctx.strokeStyle = 'rgba(66,70,74,.17)'; ctx.lineWidth = .45; ctx.stroke();
     ctx.setLineDash([1, 13]);
     ctx.beginPath(); ctx.moveTo(-350,0); ctx.lineTo(258,0);
-    ctx.strokeStyle = 'rgba(79,83,85,.29)'; ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = 'rgba(79,83,85,.15)'; ctx.stroke(); ctx.setLineDash([]);
     for (const y of [-190,-153,-135,135,168]) {
       ctx.beginPath(); ctx.arc(0,y,y === -135 ? 1.7 : 2.8,0,TAU);
-      ctx.fillStyle = '#141616'; ctx.fill();
+      ctx.fillStyle = 'rgba(20,22,22,.46)'; ctx.fill();
     }
     const particleStep=width<=600?2:1;
     for(let i=0;i<particles.length;i+=particleStep) {
@@ -510,8 +541,8 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     if(!orbitalImage.complete||!orbitalImage.naturalWidth)return;
     const p=warp(satellite.x,satellite.y,.28),depth=(satellite.depth+1)*.5;
     ctx.save();ctx.translate(p[0],p[1]);ctx.imageSmoothingQuality='high';
-    ctx.globalAlpha=.68+depth*.32;
-    ctx.filter=`blur(${(.92-depth*.77)*dpr*scale}px)`;
+    ctx.globalAlpha=.44+depth*.56;
+    ctx.filter=`blur(${(2.2-depth*2.05)*dpr*scale}px)`;
     const extent=satellite.r/.891;
     ctx.drawImage(orbitalImage,-extent,-extent,extent*2,extent*2);ctx.restore();
   }
@@ -536,7 +567,10 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     }
     stateMix.listening=mix(stateMix.listening,state==='listening'?1:0,blend);
     stateMix.thinking=mix(stateMix.thinking,state==='thinking'?1:0,blend);
-    if(motion)phase+=delta*(.90+stateMix.listening*.10+stateMix.thinking*.36);
+    if(motion)phase+=delta*(.90+stateMix.listening*.10+stateMix.thinking*.36+surge*.55);
+    surgeProgress=clamp((phase%17-10.5)/3.5,0,1);
+    surge=Math.sin(surgeProgress*Math.PI)**3;
+    if(timestamp-lightTime>80){onLight(.08+.035*(.5+.5*Math.sin(phase*.72))+surge*.13,28+Math.sin(phase*.28)*14);lightTime=timestamp;}
     if(motion){submitAge+=delta;completeAge+=delta;}else{submitAge=Infinity;completeAge=Infinity;}
     pointer.x=pointer.targetX;pointer.y=pointer.targetY;
     pointer.presence=interaction?pointer.targetPresence:0;
@@ -548,7 +582,9 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     const surface=coreField.render(pointer,pressStrength,energy,delta,phase,visual);
     ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
     ctx.translate(centerX,centerY);ctx.scale(scale,scale);
-    drawRibbons(phase);drawOrbits(phase);drawGravityEffects(phase);drawAccretion(phase);drawGlint(phase);
+    drawRibbons(phase);drawOrbits(phase);drawGravityEffects(phase);
+    refraction.draw(ctx,canvas,centerX,centerY,scale,dpr,phase);
+    drawAccretion(phase);drawGlint(phase);
     for(let i=0;i<satellites.length;i++) {
       const satellite=satellites[i],position=satellitePositions[i];
       const angle=satellite.angle+phase*TAU/satellite.period*satellite.direction;
@@ -603,7 +639,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
       document.removeEventListener('pointerleave',onLeave);
       document.removeEventListener('visibilitychange',onVisibility);
       window.removeEventListener('blur',onLeave);
-      coreField.destroy();
+      coreField.destroy();refraction.destroy();
     },
   };
 }
