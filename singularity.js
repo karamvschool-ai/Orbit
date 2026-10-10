@@ -28,18 +28,23 @@ function sampleCurve(points, t) {
 
 export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () => true, getInteraction = () => true, getState = () => 'idle' } = {}) {
   const ctx = canvas.getContext('2d', { alpha: true });
-  if (!ctx) return { destroy() {} };
+  if (!ctx) return { cue() {}, destroy() {} };
   const coreField = createCoreField();
   const orbitalImage = new Image();
   orbitalImage.decoding = 'async';
   orbitalImage.src = new URL('./assets/orbital-sphere.png',import.meta.url).href;
   const random = randomSource(34017);
   let width = 0, height = 0, dpr = 1, scale = 1, centerX = 0, centerY = 0;
-  let frame = 0, destroyed = false, phase = 0, lastTime = 0, energy = 0, pressStrength = 0;
+  let frame = 0, refreshTimer = 0, destroyed = false, phase = 0, lastTime = 0, energy = 0, pressStrength = 0;
+  let submitAge = Infinity, completeAge = Infinity, wakeUntil = 0, previousState = '', previousMotion = null, previousInteraction = null;
+  const stateMix = { listening: 0, thinking: 0 };
+  const visual = { listening: 0, thinking: 0, completeProgress: -1 };
+  const scratch = [0, 0];
+  const satellitePositions = Array.from({length: 3}, () => ({x: 0, y: 0, r: 0, depth: 0}));
   const pointer = { x: 0, y: 0, clientX: null, clientY: null, targetX: 0, targetY: 0, presence: 0, targetPresence: 0 };
   const satellites = [
-    { a: 192, b: 139, tilt: 35 * Math.PI / 180, angle: 3.294, period: 20, direction: 1, radius: 11.4 },
-    { a: 206, b: 149, tilt: -27 * Math.PI / 180, angle: 3.062, period: 20, direction: 1, radius: 12.1 },
+    { a: 192, b: 139, tilt: 35 * Math.PI / 180, angle: 3.294, period: 24, direction: 1, radius: 11.4 },
+    { a: 206, b: 149, tilt: -27 * Math.PI / 180, angle: 3.062, period: 31, direction: 1, radius: 12.1 },
     { a: 164, b: 124, tilt: 17 * Math.PI / 180, angle: .435, period: 20, direction: 1, radius: 12 },
   ];
   const particles = Array.from({ length: 225 }, (_, i) => ({
@@ -76,11 +81,30 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     { p: [[126,46],[174,-44],[136,-128],[91,-144],[58,-90]], spread: 11, bend: 10, alpha: .44, strands: 8 },
   ].map((ribbon, i) => ({
     ...ribbon,
-    inkStrength: [.28,.16,0,.74,.24,.32,0,.27,.17,.42,0,.23,.52,.44,.50][i],
+    inkStrength: [.40,.19,0,.78,.28,.39,0,.38,.20,.53,0,.26,.58,.50,.56][i],
     phase: i * 1.71,
     samples: Array.from({ length: 88 }, (_, n) => sampleCurve(ribbon.p, n / 87)),
+    surface: new Float32Array(88 * 12),
+    major: ribbon.alpha >= .38 && ribbon.spread >= 16,
   }));
 
+  const wavePaths = [
+    [[-705,-304],[-558,-311],[-431,-225],[-350,-20],[-181,64],[20,5]],
+    [[-777,-114],[-599,-97],[-441,11],[-282,108],[-152,66],[49,24]],
+    [[-778,84],[-519,114],[-324,140],[-126,61],[45,-8]],
+    [[-194,-185],[-306,-199],[-428,-150],[-349,-48],[-179,-73],[41,-32]],
+    [[85,-179],[194,-206],[279,-124],[247,12],[367,148],[499,147]],
+  ].map(points => Array.from({length: 95}, (_, j) => sampleCurve(points, j / 94)));
+  orbitalImage.onload = () => invalidate();
+
+  function requestFrame() {
+    if (!destroyed && !document.hidden && !frame) frame = requestAnimationFrame(render);
+  }
+  function invalidate() {
+    wakeUntil = performance.now() + 420;
+    clearTimeout(refreshTimer); refreshTimer = 0;
+    requestFrame();
+  }
   function resize() {
     width = window.innerWidth; height = window.innerHeight;
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -93,6 +117,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
       pointer.targetX = (pointer.clientX - centerX) / scale;
       pointer.targetY = (pointer.clientY - centerY) / scale;
     }
+    invalidate();
   }
   function onPointer(event) {
     pointer.clientX = event.clientX;
@@ -100,124 +125,153 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     pointer.targetX = (event.clientX - centerX) / scale;
     pointer.targetY = (event.clientY - centerY) / scale;
     pointer.targetPresence = 1;
+    invalidate();
   }
-  function onLeave() { pointer.targetPresence = 0; }
+  function onLeave() { pointer.targetPresence = 0; invalidate(); }
 
-  // A local repulsive field pushes and bends the finest filaments.
-  function warp(x, y, strength = 1) {
-    if (pointer.presence < .001) return [x, y];
+  // The rim and nearby plotted geometry share the core's material transport.
+  // A broader, weaker field carries that displacement into the distant ribbons.
+  function warp(x, y, strength = 1, out = scratch) {
+    if (pointer.presence < .001) { out[0] = x; out[1] = y; return out; }
+    const material = coreField.displacePoint(x, y);
     const dx = x - pointer.x, dy = y - pointer.y;
     const distance = Math.hypot(dx, dy);
     const falloff = Math.max(0, 1 - distance / 190);
     const influence = falloff * falloff * pointer.presence * strength;
-    const pull = influence * 22 / Math.max(distance, 22);
-    return [x + dx * pull - dy * influence * .10, y + dy * pull + dx * influence * .10];
+    const pull = influence * 7 / Math.max(distance, 22);
+    const connection = clamp((225 - Math.hypot(x,y)) / 100, 0, 1) * strength;
+    out[0] = x + (material[0] - x) * connection + dx * pull - dy * influence * .035;
+    out[1] = y + (material[1] - y) * connection + dy * pull + dx * influence * .035;
+    return out;
+  }
+  function ribbonEdge(ribbon, j, offset, flutter = 0) {
+    const s = ribbon.surface, i = j * 12;
+    const displacement = offset * s[i+6] + flutter;
+    return warp(s[i] + s[i+4] * displacement, s[i+1] + s[i+5] * displacement);
+  }
+  function drawRibbonSignal(ribbon, index, time) {
+    if (!getMotion()) return;
+    const submission = submitAge < 1.35;
+    const thinking = stateMix.thinking > .03;
+    if (!submission && !thinking) return;
+    const outerFirst = Math.hypot(...ribbon.samples[0]) > Math.hypot(...ribbon.samples[87]);
+    let progress, alpha;
+    if (submission) {
+      progress = clamp((submitAge - index * .085) / 1.04, 0, 1);
+      alpha = Math.sin(progress * Math.PI) * .70;
+    } else {
+      progress = (time * .29 + index * .32) % 1;
+      alpha = Math.sin(progress * Math.PI) * stateMix.thinking * .34;
+    }
+    const head = (outerFirst ? progress : 1-progress) * 87;
+    const tail = clamp(head + (outerFirst ? -9 : 9), 0, 87);
+    const from = Math.floor(Math.min(head,tail)), to = Math.ceil(Math.max(head,tail));
+    if (alpha < .015 || from === to) return;
+    ctx.beginPath();
+    for (let j=from;j<=to;j++) {
+      const q=ribbonEdge(ribbon,j,-.10);
+      if(j===from)ctx.moveTo(q[0],q[1]);else ctx.lineTo(q[0],q[1]);
+    }
+    ctx.strokeStyle=`rgba(39,43,46,${alpha*.23})`;ctx.lineWidth=3.1;ctx.stroke();
+    ctx.strokeStyle=`rgba(255,255,255,${alpha})`;ctx.lineWidth=1.05;
+    ctx.shadowColor=`rgba(255,255,255,${alpha*.65})`;ctx.shadowBlur=3;
+    ctx.stroke();ctx.shadowBlur=0;
   }
   function drawRibbons(time) {
     ctx.lineCap = 'round';
-    const listening = getState() === 'listening';
-    const breath = listening ? Math.sin(time * 2.6) * 3 : Math.sin(time * .7) * 1.5;
-    for (const ribbon of ribbons) {
-      const major = ribbon.alpha >= .38 && ribbon.spread >= 16;
-      // Every strand shares one smooth, slowly folding surface. Small edge
-      // flutter adds detail without turning the whole stream into a tight coil.
-      const centers = ribbon.samples.map((base, j) => {
-        const t = j / (ribbon.samples.length - 1);
-        const before = ribbon.samples[Math.max(0,j-1)], after = ribbon.samples[Math.min(ribbon.samples.length-1,j+1)];
-        const dx = after[0] - before[0], dy = after[1] - before[1], length = Math.hypot(dx,dy) || 1;
-        const envelope = Math.sin(Math.PI * t) ** .85;
-        const displacement = (Math.sin(t * 4.8 - time * .95 + ribbon.phase) * ribbon.bend * 1.35 +
-          Math.sin(time * .74 + ribbon.phase * .6) * (19 + breath)) * envelope * (1 + energy * .12);
-        return { x: base[0] - dy / length * displacement, y: base[1] + dx / length * displacement, t, envelope };
-      });
-      const surface = centers.map((point, j) => {
-        const before = centers[Math.max(0,j-1)], after = centers[Math.min(centers.length-1,j+1)];
-        const dx = after.x - before.x, dy = after.y - before.y, length = Math.hypot(dx,dy) || 1;
-        const twist = Math.sin(point.t * 3.4 - time * .46 + ribbon.phase * .55);
-        return { ...point, nx: -dy / length, ny: dx / length,
-          width: ribbon.spread * (.22 + point.envelope * .78) *
-            (major ? 1.10 + twist * .22 : .68 + twist * .32), twist };
-      });
-      function edge(point, offset, flutter = 0) {
-        const displacement = offset * point.width + flutter;
-        return warp(point.x + point.nx * displacement,point.y + point.ny * displacement);
+    const breath = Math.sin(time*.7)*1.5*(1-stateMix.listening) + Math.sin(time*3.2)*4*stateMix.listening;
+    const sampleStep = width <= 600 ? 2 : 1;
+    for (let n=0;n<ribbons.length;n++) {
+      const ribbon = ribbons[n], s = ribbon.surface, major = ribbon.major;
+      // Reuse a fixed geometry buffer; all strands share coherent surface folds.
+      for (let j=0;j<88;j++) {
+        const base=ribbon.samples[j], t=j/87, i=j*12;
+        const before=ribbon.samples[Math.max(0,j-1)], after=ribbon.samples[Math.min(87,j+1)];
+        const dx=after[0]-before[0], dy=after[1]-before[1], length=Math.hypot(dx,dy)||1;
+        const envelope=Math.sin(Math.PI*t)**.85;
+        const displacement=(Math.sin(t*4.8-time*(.79+stateMix.thinking*.20)+ribbon.phase)*ribbon.bend*1.35 +
+          Math.sin(time*.74+ribbon.phase*.6)*(19+breath))*envelope*(1+energy*.12);
+        s[i]=base[0]-dy/length*displacement;s[i+1]=base[1]+dx/length*displacement;
+        s[i+2]=t;s[i+3]=envelope;
       }
-      // Shaded cross-sections make the folds translucent surfaces, with a soft
-      // graphite underside and a pale reflective edge, rather than thick lines.
-      for (let j = 0; j < surface.length - 1; j += 3) {
-        const a = surface[j], b = surface[Math.min(j+3,surface.length-1)];
-        const leftA = edge(a,-1), rightA = edge(a,1), leftB = edge(b,-1), rightB = edge(b,1);
-        const midpoint = surface[Math.min(j+1,surface.length-1)];
-        const left = edge(midpoint,-1), right = edge(midpoint,1);
-        const shade = ctx.createLinearGradient(left[0],left[1],right[0],right[1]);
-        const body = ribbon.alpha * (.38 + midpoint.envelope * .62);
-        shade.addColorStop(0, `rgba(245,246,248,${body * .035})`);
-        shade.addColorStop(.16, `rgba(181,184,188,${body * .09})`);
-        shade.addColorStop(.43, `rgba(139,143,148,${body * (major ? .17 : .12)})`);
-        shade.addColorStop(.69, `rgba(52,56,61,${body * ((major ? .26 : .12) + midpoint.twist * .035)})`);
-        shade.addColorStop(.9, `rgba(244,245,247,${body * (major ? .28 : .16)})`);
-        shade.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.beginPath();ctx.moveTo(...leftA);ctx.lineTo(...leftB);ctx.lineTo(...rightB);ctx.lineTo(...rightA);ctx.closePath();
-        ctx.fillStyle = shade;ctx.fill();
+      for(let j=0;j<88;j++) {
+        const i=j*12, before=Math.max(0,j-1)*12, after=Math.min(87,j+1)*12;
+        const dx=s[after]-s[before],dy=s[after+1]-s[before+1],length=Math.hypot(dx,dy)||1;
+        const twist=Math.sin(s[i+2]*3.4-time*.46+ribbon.phase*.55);
+        s[i+4]=-dy/length;s[i+5]=dx/length;s[i+7]=twist;
+        s[i+6]=ribbon.spread*(.22+s[i+3]*.78)*(major?1.10+twist*.22:.68+twist*.32);
+        let q=ribbonEdge(ribbon,j,-1);s[i+8]=q[0];s[i+9]=q[1];
+        q=ribbonEdge(ribbon,j,1);s[i+10]=q[0];s[i+11]=q[1];
       }
-      for (let strand = 0; strand < ribbon.strands; strand++) {
-        const offset = (strand / (ribbon.strands - 1) - .5) * 2;
-        const foreground = ribbon.inkStrength > 0 && (strand === Math.floor(ribbon.strands * .38) ||
-          (ribbon.inkStrength >= .4 && strand === Math.floor(ribbon.strands * .72)));
-        const middle = !foreground && strand % 4 === 1;
+      // Selected graphite folds create depth; the remainder stays transparent.
+      const stripStep=width<=600?8:5;
+      for(let j=0;j<87;j+=stripStep) {
+        const i=j*12,k=Math.min(j+stripStep,87)*12,m=Math.min(j+Math.floor(stripStep/2),87)*12;
+        const shade=ctx.createLinearGradient(s[m+8],s[m+9],s[m+10],s[m+11]);
+        const body=ribbon.alpha*(.38+s[m+3]*.62);
+        shade.addColorStop(0,`rgba(245,246,248,${body*.03})`);
+        shade.addColorStop(.18,`rgba(169,174,178,${body*.09})`);
+        shade.addColorStop(.44,`rgba(105,111,115,${body*(major?.18:.10)})`);
+        shade.addColorStop(.69,`rgba(39,44,48,${body*((major?.32:.13)+s[m+7]*.065)})`);
+        shade.addColorStop(.88,`rgba(249,250,251,${body*(major?.34:.15)})`);
+        shade.addColorStop(1,'rgba(255,255,255,0)');
+        ctx.beginPath();ctx.moveTo(s[i+8],s[i+9]);ctx.lineTo(s[k+8],s[k+9]);
+        ctx.lineTo(s[k+10],s[k+11]);ctx.lineTo(s[i+10],s[i+11]);ctx.closePath();
+        ctx.fillStyle=shade;ctx.fill();
+      }
+      for(let strand=0;strand<ribbon.strands;strand++) {
+        if(width<=600 && strand%2 && strand!==Math.floor(ribbon.strands*.38))continue;
+        const offset=(strand/(ribbon.strands-1)-.5)*2;
+        const foreground=ribbon.inkStrength>0&&(strand===Math.floor(ribbon.strands*.38)||
+          (ribbon.inkStrength>=.4&&strand===Math.floor(ribbon.strands*.72)));
+        const middle=!foreground&&strand%4===1;
         ctx.beginPath();
-        for (let j = 0; j < surface.length; j++) {
-          const point = surface[j];
-          const flutter = Math.sin(point.t * 15 - time * 1.75 + strand * .6) * point.envelope *
-            (foreground ? .45 : .9 + Math.abs(offset) * .7);
-          const position = edge(point,offset,flutter);
-          if (!j) ctx.moveTo(...position); else ctx.lineTo(...position);
+        for(let j=0;j<88;j+=sampleStep) {
+          const i=j*12, flutter=Math.sin(s[i+2]*15-time*1.75+strand*.6)*s[i+3]*(foreground?.45:.9+Math.abs(offset)*.7);
+          const q=ribbonEdge(ribbon,j,offset,flutter);
+          if(!j)ctx.moveTo(q[0],q[1]);else ctx.lineTo(q[0],q[1]);
         }
-        const weight = 1 - Math.abs(offset) * .65;
-        if (foreground) {
-          const first = surface[0], last = surface[surface.length-1];
-          const ink = ctx.createLinearGradient(first.x,first.y,last.x,last.y);
-          const opacity = ribbon.inkStrength * weight;
-          const crest = strand < ribbon.strands * .5 ? .44 : .68;
-          ink.addColorStop(0, `rgba(28,30,31,${opacity * .025})`);
-          ink.addColorStop(.20, `rgba(28,30,31,${opacity * .20})`);
-          ink.addColorStop(crest, `rgba(28,30,31,${opacity})`);
-          ink.addColorStop(.86, `rgba(28,30,31,${opacity * .52})`);
-          ink.addColorStop(1, `rgba(28,30,31,${opacity * .10})`);
-          ctx.strokeStyle = ink;
-          ctx.lineWidth = strand < ribbon.strands * .5 ? (ribbon.inkStrength >= .7 ? .94 : .72) : .56;
+        const weight=1-Math.abs(offset)*.65;
+        if(foreground) {
+          const ink=ctx.createLinearGradient(s[0],s[1],s[87*12],s[87*12+1]);
+          const opacity=ribbon.inkStrength*weight,crest=strand<ribbon.strands*.5?.44:.68;
+          ink.addColorStop(0,`rgba(26,29,31,${opacity*.02})`);
+          ink.addColorStop(.20,`rgba(26,29,31,${opacity*.19})`);
+          ink.addColorStop(crest,`rgba(26,29,31,${opacity})`);
+          ink.addColorStop(.86,`rgba(26,29,31,${opacity*.48})`);
+          ink.addColorStop(1,`rgba(26,29,31,${opacity*.08})`);
+          ctx.strokeStyle=ink;ctx.lineWidth=strand<ribbon.strands*.5?(ribbon.inkStrength>=.7?1.08:.84):.51;
         } else {
-          ctx.strokeStyle = `rgba(${middle ? '55,58,60' : '105,109,113'},${ribbon.alpha * weight * (middle ? .20 : .052)})`;
-          ctx.lineWidth = .38 + (strand % 3) * .13;
+          ctx.strokeStyle=`rgba(${middle?'55,58,60':'105,109,113'},${ribbon.alpha*weight*(middle?.19:.047)})`;
+          ctx.lineWidth=.35+(strand%3)*.12;
         }
         ctx.stroke();
-        if (foreground && ribbon.inkStrength >= .4 && strand < ribbon.strands * .5) {
-          for (const fraction of [.28,.48,.70]) {
-            const point = surface[Math.round(fraction * (surface.length-1))];
-            const position = edge(point,offset);
-            ctx.beginPath();ctx.arc(...position,.66,0,TAU);
-            ctx.fillStyle = `rgba(24,26,29,${ribbon.inkStrength * .9})`;ctx.fill();
+        if(foreground&&ribbon.inkStrength>=.4&&strand<ribbon.strands*.5) {
+          for(const fraction of [.28,.48,.70]) {
+            const q=ribbonEdge(ribbon,Math.round(fraction*87),offset);
+            ctx.beginPath();ctx.arc(q[0],q[1],.62,0,TAU);ctx.fillStyle=`rgba(24,26,29,${ribbon.inkStrength*.8})`;ctx.fill();
           }
         }
       }
+      if(n===0||n===3||n===7)drawRibbonSignal(ribbon,n===0?0:n===3?1:2,time);
     }
-    // Long, barely visible orbital waves provide the composition's airy reach.
-    ctx.strokeStyle = 'rgba(109,112,116,.17)'; ctx.lineWidth = .48;
-    const wavePaths = [
-      [[-705,-304],[-558,-311],[-431,-225],[-350,-20],[-181,64],[20,5]],
-      [[-777,-114],[-599,-97],[-441,11],[-282,108],[-152,66],[49,24]],
-      [[-778,84],[-519,114],[-324,140],[-126,61],[45,-8]],
-      [[-194,-185],[-306,-199],[-428,-150],[-349,-48],[-179,-73],[41,-32]],
-      [[85,-179],[194,-206],[279,-124],[247,12],[367,148],[499,147]],
-    ];
-    for (let n = 0; n < wavePaths.length; n++) {
+    ctx.strokeStyle='rgba(109,112,116,.15)';ctx.lineWidth=.48;
+    for(let n=0;n<wavePaths.length;n++) {
       ctx.beginPath();
-      for (let j = 0; j < 95; j++) {
-        const t = j / 94, p = sampleCurve(wavePaths[n], t);
-        const q = warp(p[0], p[1] + Math.sin(t * TAU - time * .66 + n) * 22);
-        if (!j) ctx.moveTo(q[0], q[1]); else ctx.lineTo(q[0], q[1]);
+      for(let j=0;j<95;j+=sampleStep) {
+        const p=wavePaths[n][j],q=warp(p[0],p[1]+Math.sin(j/94*TAU-time*.66+n)*22);
+        if(!j)ctx.moveTo(q[0],q[1]);else ctx.lineTo(q[0],q[1]);
       }
       ctx.stroke();
+    }
+  }
+  function traceOrbit(a,b,tilt,start,end,strength=.46) {
+    const count=width<=600?44:68,cos=Math.cos(tilt),sin=Math.sin(tilt);
+    ctx.beginPath();
+    for(let i=0;i<=count;i++) {
+      const angle=start+i/count*(end-start),x=Math.cos(angle)*a,y=Math.sin(angle)*b;
+      const q=warp(x*cos-y*sin,x*sin+y*cos,strength);
+      if(!i)ctx.moveTo(q[0],q[1]);else ctx.lineTo(q[0],q[1]);
     }
   }
   function drawOrbits(time) {
@@ -225,19 +279,15 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     for (let ring = 0; ring < 15; ring++) {
       const radius = 111 + ring * 5.6;
       const rotation = ring * .28 + time * (ring % 2 ? .075 : -.062);
-      ctx.save(); ctx.rotate(rotation);
-      ctx.scale(1, .97 - (ring % 5) * .012);
-      ctx.beginPath();
-      ctx.arc(0,0,radius, .10 + ring * .31, 4.5 + ring * .30);
+      traceOrbit(radius,radius*(.97-(ring%5)*.012),rotation,.10+ring*.31,4.5+ring*.30);
       ctx.strokeStyle = `rgba(96,101,105,${ring % 3 === 0 ? .22 : .115})`;
-      ctx.stroke(); ctx.restore();
+      ctx.stroke();
     }
     // Inclined orbital ellipses bring a scientific wire-frame quality to the halo.
     for (let i = 0; i < 7; i++) {
-      ctx.save(); ctx.rotate(i * .47 + .2 + time * .024);
-      ctx.beginPath(); ctx.ellipse(0, 0, 195 - i * 6, 73 + i * 12, 0, .2, TAU - .26);
+      traceOrbit(195-i*6,73+i*12,i*.47+.2+time*.024,.2,TAU-.26);
       ctx.strokeStyle = `rgba(109,113,117,${i % 2 ? .078 : .12})`;
-      ctx.lineWidth = .42; ctx.stroke(); ctx.restore();
+      ctx.lineWidth = .42; ctx.stroke();
     }
     ctx.beginPath(); ctx.moveTo(0,-244); ctx.lineTo(0,237);
     ctx.strokeStyle = 'rgba(66,70,74,.40)'; ctx.lineWidth = .45; ctx.stroke();
@@ -250,7 +300,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     }
     for (const particle of particles) {
       const a = particle.angle + time * particle.speed * 1.8;
-      const r = particle.radius + Math.sin(time * .55 + particle.offset) * 5.5;
+      const r = particle.radius + Math.sin(time * .55 + particle.offset) * 5.5 - stateMix.listening * Math.sin(time*3.2+particle.offset*.25)*2.0;
       const p = warp(Math.cos(a) * r, Math.sin(a) * r * particle.squash, .7);
       ctx.beginPath(); ctx.arc(p[0],p[1],particle.size,0,TAU);
       ctx.fillStyle = `rgba(22,25,26,${particle.alpha})`; ctx.fill();
@@ -261,25 +311,22 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
       ctx.fillStyle = `rgba(38,42,44,${particle.alpha})`; ctx.fill();
     }
     for (const satellite of satellites) {
-      ctx.beginPath();
-      ctx.ellipse(0, 0, satellite.a, satellite.b, satellite.tilt, 0, TAU);
+      traceOrbit(satellite.a,satellite.b,satellite.tilt,0,TAU,.28);
       ctx.strokeStyle = 'rgba(83,88,92,.15)'; ctx.lineWidth = .45; ctx.stroke();
     }
   }
-  function drawCore(delta) {
-    const surface = coreField.render(pointer, pressStrength, energy, delta, phase);
-    const bounds = coreField.bounds;
-    ctx.drawImage(surface, -bounds, -bounds, bounds * 2, bounds * 2);
+  function drawCore(surface) {
+    const bounds=coreField.bounds;
+    ctx.drawImage(surface,-bounds,-bounds,bounds*2,bounds*2);
   }
-  function drawSatellite(x,y,r) {
-    if (!orbitalImage.complete || !orbitalImage.naturalWidth) return;
-    const p = warp(x,y,.18);
-    ctx.save(); ctx.translate(p[0],p[1]);
-    ctx.imageSmoothingQuality = 'high';
-    ctx.filter = `blur(${.55 * dpr * scale}px)`;
-    const extent = r / .891;
-    ctx.drawImage(orbitalImage,-extent,-extent,extent*2,extent*2);
-    ctx.restore();
+  function drawSatellite(satellite) {
+    if(!orbitalImage.complete||!orbitalImage.naturalWidth)return;
+    const p=warp(satellite.x,satellite.y,.28),depth=(satellite.depth+1)*.5;
+    ctx.save();ctx.translate(p[0],p[1]);ctx.imageSmoothingQuality='high';
+    ctx.globalAlpha=.68+depth*.32;
+    ctx.filter=`blur(${(.92-depth*.77)*dpr*scale}px)`;
+    const extent=satellite.r/.891;
+    ctx.drawImage(orbitalImage,-extent,-extent,extent*2,extent*2);ctx.restore();
   }
   function drawGlint(time) {
     const x = 229 + Math.sin(time * .36) * 9, y = -183 + Math.cos(time * .31) * 8;
@@ -292,53 +339,82 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     ctx.beginPath(); ctx.arc(202,-166,4.2,0,TAU); ctx.fillStyle = 'rgba(86,89,88,.36)'; ctx.fill();
   }
   function render(timestamp) {
-    if (destroyed) return;
-    const delta = lastTime ? Math.min((timestamp-lastTime)/1000,.05) : 0;
-    lastTime = timestamp;
-    if (getMotion()) phase += delta * (getState() === 'thinking' ? 1.15 : 1);
-    const presenceFade = 1 - Math.exp(-delta / .075);
-    pointer.x = pointer.targetX;
-    pointer.y = pointer.targetY;
-    pointer.presence = getInteraction() ? pointer.targetPresence : 0;
-    const coreProximity = clamp((147 - Math.hypot(pointer.x, pointer.y)) / 27, 0, 1);
-    pressStrength = coreProximity * pointer.presence;
-    energy = mix(energy,clamp(Number(getEnergy()) || 0,0,1),presenceFade);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    ctx.clearRect(0,0,width,height);
-    ctx.translate(centerX,centerY); ctx.scale(scale,scale);
-    drawRibbons(phase); drawOrbits(phase); drawGlint(phase);
-    const positions = satellites.map(satellite => {
-      const angle = satellite.angle + phase * TAU / satellite.period * satellite.direction;
-      const x = satellite.a * Math.cos(angle), y = satellite.b * Math.sin(angle);
-      return {
-        x: x * Math.cos(satellite.tilt) - y * Math.sin(satellite.tilt),
-        y: x * Math.sin(satellite.tilt) + y * Math.cos(satellite.tilt),
-        r: satellite.radius * (1 + Math.sin(angle) * .10),
-        depth: Math.sin(angle),
-      };
-    });
-    for (const satellite of positions.filter(p => p.depth < 0)) drawSatellite(satellite.x, satellite.y, satellite.r);
-    drawCore(delta);
-    for (const satellite of positions.filter(p => p.depth >= 0)) drawSatellite(satellite.x, satellite.y, satellite.r);
-    frame = requestAnimationFrame(render);
+    frame=0;
+    if(destroyed||document.hidden)return;
+    const delta=lastTime?Math.max(0,Math.min((timestamp-lastTime)/1000,.05)):1/60;
+    lastTime=timestamp;
+    const state=getState(),motion=getMotion(),interaction=getInteraction(),blend=1-Math.exp(-delta/.24);
+    if(state!==previousState||motion!==previousMotion||interaction!==previousInteraction){
+      previousState=state;previousMotion=motion;previousInteraction=interaction;wakeUntil=timestamp+900;
+    }
+    stateMix.listening=mix(stateMix.listening,state==='listening'?1:0,blend);
+    stateMix.thinking=mix(stateMix.thinking,state==='thinking'?1:0,blend);
+    if(motion)phase+=delta*(.90+stateMix.listening*.10+stateMix.thinking*.36);
+    if(motion){submitAge+=delta;completeAge+=delta;}else{submitAge=Infinity;completeAge=Infinity;}
+    pointer.x=pointer.targetX;pointer.y=pointer.targetY;
+    pointer.presence=interaction?pointer.targetPresence:0;
+    pressStrength=clamp((147-Math.hypot(pointer.x,pointer.y))/27,0,1)*pointer.presence;
+    energy=mix(energy,clamp(Number(getEnergy())||0,0,1),1-Math.exp(-delta/.075));
+    visual.listening=stateMix.listening;visual.thinking=stateMix.thinking;
+    visual.completeProgress=completeAge<1.25?completeAge/1.25:-1;
+    // Advance transport once, before any geometry samples its shared displacement.
+    const surface=coreField.render(pointer,pressStrength,energy,delta,phase,visual);
+    ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
+    ctx.translate(centerX,centerY);ctx.scale(scale,scale);
+    drawRibbons(phase);drawOrbits(phase);drawGlint(phase);
+    for(let i=0;i<satellites.length;i++) {
+      const satellite=satellites[i],position=satellitePositions[i];
+      const angle=satellite.angle+phase*TAU/satellite.period*satellite.direction;
+      const x=satellite.a*Math.cos(angle),y=satellite.b*Math.sin(angle);
+      position.x=x*Math.cos(satellite.tilt)-y*Math.sin(satellite.tilt);
+      position.y=x*Math.sin(satellite.tilt)+y*Math.cos(satellite.tilt);
+      position.depth=Math.sin(angle);position.r=satellite.radius*(.94+position.depth*.14);
+    }
+    // Small visual separation prevents different orbital periods overlapping.
+    for(let a=0;a<3;a++)for(let b=a+1;b<3;b++) {
+      const p=satellitePositions[a],q=satellitePositions[b],dx=q.x-p.x,dy=q.y-p.y,d=Math.hypot(dx,dy);
+      if(d>0&&d<29){const push=(29-d)*.5/d;p.x-=dx*push;p.y-=dy*push;q.x+=dx*push;q.y+=dy*push;}
+    }
+    for(const satellite of satellitePositions)if(satellite.depth<0)drawSatellite(satellite);
+    drawCore(surface);
+    for(const satellite of satellitePositions)if(satellite.depth>=0)drawSatellite(satellite);
+    const cueActive=submitAge<1.35||completeAge<1.25;
+    const settling=Math.abs(stateMix.listening-(state==='listening'?1:0))>.003||Math.abs(stateMix.thinking-(state==='thinking'?1:0))>.003;
+    if(motion||cueActive||settling||timestamp<wakeUntil)requestFrame();
+    else refreshTimer=setTimeout(()=>{refreshTimer=0;requestFrame();},180);
+  }
+  function onVisibility() {
+    clearTimeout(refreshTimer);refreshTimer=0;lastTime=0;
+    if(document.hidden){cancelAnimationFrame(frame);frame=0;}
+    else invalidate();
   }
   resize();
   window.addEventListener('resize',resize,{passive:true});
   window.addEventListener('pointermove',onPointer,{passive:true});
-  function onPointerUp(event) { if (event.pointerType !== 'mouse') onLeave(); }
+  function onPointerUp(event){if(event.pointerType!=='mouse')onLeave();}
   window.addEventListener('pointerup',onPointerUp,{passive:true});
   window.addEventListener('pointercancel',onLeave,{passive:true});
   document.addEventListener('pointerleave',onLeave);
+  document.addEventListener('visibilitychange',onVisibility);
   window.addEventListener('blur',onLeave);
-  frame = requestAnimationFrame(render);
+  requestFrame();
   return {
+    cue(type) {
+      if(destroyed||!getMotion())return;
+      if(type==='submit')submitAge=0;
+      else if(type==='complete')completeAge=0;
+      else return;
+      invalidate();
+    },
     destroy() {
-      destroyed = true; cancelAnimationFrame(frame);
+      destroyed=true;cancelAnimationFrame(frame);clearTimeout(refreshTimer);
+      orbitalImage.onload=null;
       window.removeEventListener('resize',resize);
       window.removeEventListener('pointermove',onPointer);
       window.removeEventListener('pointerup',onPointerUp);
       window.removeEventListener('pointercancel',onLeave);
       document.removeEventListener('pointerleave',onLeave);
+      document.removeEventListener('visibilitychange',onVisibility);
       window.removeEventListener('blur',onLeave);
       coreField.destroy();
     },
