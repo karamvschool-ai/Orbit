@@ -33,6 +33,10 @@ const scene = createSingularity($('#singularity'), {
   getMotion: () => settings.motion && !reducedMotion.matches,
   getInteraction: () => settings.interaction && !pageExpanded,
   getState: () => assistantState,
+  onLight: (strength,position) => {
+    app.style.setProperty('--scene-reflection', strength.toFixed(3));
+    app.style.setProperty('--scene-light-position', `${position.toFixed(1)}%`);
+  },
 });
 
 function setAssistantState(state) {

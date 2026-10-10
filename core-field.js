@@ -53,7 +53,7 @@ export function createCoreField({radius=112}={}) {
         float black=1.-smoothstep(-.46,.46,sdf);
         float r=length(world),angle=atan(world.y,world.x);
         // A stable bright side belongs to the light flow, never to the black body.
-        float bright=pow(.5+.5*cos(angle+2.35),1.65);
+        float bright=pow(.5+.5*cos(angle+2.35),4.5);
         float listenWave=.5+.5*sin(u_time*3.2);
         float intensity=1.+u_listening*(.12+.24*listenWave)+u_thinking*.14+clamp(u_energy,0.,1.)*.09;
         float lightRipple=sin(angle*17.-u_time*.36)*.15+sin(angle*29.+u_time*.22)*.06;
@@ -74,7 +74,7 @@ export function createCoreField({radius=112}={}) {
           lightStreak(angle,u_time*.28-2.7,outerSdf,21.6,.54,.28)*.61;
         streak*=.16+.84*bright;
         // Contrast sits in distinct thin layers; there is no broad spherical bevel.
-        float shoulder=exp(-pow((outerSdf-3.8-lightRipple*.65)/1.10,2.))*(.035+.36*bright);
+        float shoulder=exp(-pow((outerSdf-3.8-lightRipple*.65)/1.10,2.))*(.018+.58*bright);
         shoulder+=exp(-pow((outerSdf-6.7)/.65,2.))*(.016+.23*bright)*arcBreak;
         shoulder+=exp(-pow((outerSdf-10.4)/.64,2.))*(.009+.18*bright)*arcBreak;
         shoulder+=exp(-pow((outerSdf-17.2)/.70,2.))*.11*bright*arcBreak;
@@ -184,13 +184,13 @@ export function createCoreField({radius=112}={}) {
         const dx=Math.cos(direction)*reach,dy=Math.sin(direction)*reach;
         const gradient=ctx.createLinearGradient(-dx,-dy,dx,dy);
         for(const t of [0,.15,.35,.55,.75,1]) {
-          const brightness=t**1.65;
+          const brightness=t**4.5;
           gradient.addColorStop(t,`rgba(${color},${Math.min(1,low+(high-low)*brightness)})`);
         }
         return gradient;
       };
       // Primary remains sharp; separated graphite supports reveal the white light.
-      contour(3.8,state.time);ctx.strokeStyle=lightGradient(.035,.395,'56,63,67');ctx.lineWidth=1.80;
+      contour(3.8,state.time);ctx.strokeStyle=lightGradient(.018,.598,'56,63,67');ctx.lineWidth=1.80;
       ctx.shadowColor='rgba(65,72,75,.07)';ctx.shadowBlur=1.2;ctx.stroke();
       contour(1.55,state.time);ctx.strokeStyle=lightGradient(.020,.135*intensity);ctx.lineWidth=2.55;
       ctx.shadowColor='rgba(255,255,255,.13)';ctx.shadowBlur=1.9;ctx.stroke();
@@ -218,7 +218,7 @@ export function createCoreField({radius=112}={}) {
         [state.time*.47+2.2,16,.26,.73,.80],
         [state.time*.28-2.7,21.6,.28,.61,.90],
       ]) {
-        const bright=.16+.84*(.5+.5*Math.cos(center+2.35))**1.65;
+        const bright=.16+.84*(.5+.5*Math.cos(center+2.35))**4.5;
         const from=center-width*1.8,to=center+width*1.8;
         const a=fluid.displacePoint(Math.cos(from)*(radius+offset),Math.sin(from)*(radius+offset));
         const b=fluid.displacePoint(Math.cos(to)*(radius+offset),Math.sin(to)*(radius+offset));
@@ -238,7 +238,7 @@ export function createCoreField({radius=112}={}) {
         const offset=15+progress*39;
         for(let segment=0;segment<32;segment++) {
           const start=segment/32*TAU,end=(segment+1)/32*TAU,angle=(start+end)*.5;
-          const bright=(.5+.5*Math.cos(angle+2.35))**1.65;
+          const bright=(.5+.5*Math.cos(angle+2.35))**4.5;
           const mask=(.18+.68*bright)*(.37+.63*(.5+.5*Math.cos(angle*3+echo*1.7))**2)*envelope;
           if(mask<.005)continue;
           contour(offset+1.5,state.time,start,end);ctx.strokeStyle=`rgba(56,63,67,${mask*.39})`;ctx.lineWidth=1.30;ctx.stroke();
