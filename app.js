@@ -2,9 +2,13 @@ import { createSingularity } from './singularity.js';
 
 const $ = (selector) => document.querySelector(selector);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-const settings = { motion: !reducedMotion.matches, interaction: true };
+const settings = { motion: true, interaction: true };
+const app = $('.orbit-app');
+const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
 let energy = 0;
 let voicePreview = false;
+let assistantState = 'idle';
+let settleTimer;
 let processingTimer = null;
 let toastTimer;
 let attachedFiles = [];
@@ -26,10 +30,76 @@ const conversations = [
 ];
 const scene = createSingularity($('#singularity'), {
   getEnergy: () => energy,
-  getMotion: () => settings.motion,
+  getMotion: () => settings.motion && !reducedMotion.matches,
   getInteraction: () => settings.interaction && !pageExpanded,
-  getState: () => voicePreview ? 'listening' : energy > .7 ? 'thinking' : 'idle',
+  getState: () => assistantState,
 });
+
+function setAssistantState(state) {
+  clearTimeout(settleTimer);
+  assistantState = state;
+  app.dataset.state = state;
+  if (state === 'complete') settleTimer = setTimeout(() => setAssistantState('idle'), 2100);
+}
+
+function syncVisualPreferences() {
+  app.dataset.motion = String(settings.motion && !reducedMotion.matches);
+  if (!settings.motion || reducedMotion.matches) {
+    app.querySelectorAll('.is-arriving, .is-revealed, .is-sending, .just-completed').forEach(node => {
+      node.classList.remove('is-arriving', 'is-revealed', 'is-sending', 'just-completed');
+    });
+    clearSurfaceLight();
+  }
+}
+
+function animateSurface(node, className) {
+  node.classList.remove(className);
+  if (!settings.motion || reducedMotion.matches) return;
+  void node.offsetWidth;
+  node.classList.add(className);
+}
+
+for (const node of [$('.request-island'), $('.response-island'), $('#composer'), $('#task-panel'), ...document.querySelectorAll('.task-row')]) {
+  node.addEventListener('animationend', event => {
+    if (event.target === node) node.classList.remove('is-arriving', 'is-revealed', 'is-sending', 'just-completed');
+  });
+}
+
+// Light follows the cursor only within a glass surface, without moving its content.
+let lightFrame = 0;
+let lightSurface = null;
+let lightPosition = null;
+function clearSurfaceLight() {
+  lightSurface?.classList.remove('is-lit');
+  lightSurface = null;
+  lightPosition = null;
+  cancelAnimationFrame(lightFrame);
+  lightFrame = 0;
+}
+function onSurfacePointer(event) {
+  if (!finePointer.matches || !settings.motion || reducedMotion.matches || pageExpanded) return clearSurfaceLight();
+  const surface = event.target.closest('.request-island, .response-island, .composer, .task-panel');
+  if (surface !== lightSurface) {
+    clearSurfaceLight();
+    lightSurface = surface;
+  }
+  if (!surface) return;
+  lightPosition = { x: event.clientX, y: event.clientY };
+  if (lightFrame) return;
+  lightFrame = requestAnimationFrame(() => {
+    lightFrame = 0;
+    if (!lightSurface || !lightPosition) return;
+    const rect = lightSurface.getBoundingClientRect();
+    lightSurface.style.setProperty('--light-x', `${((lightPosition.x - rect.left) / rect.width * 100).toFixed(1)}%`);
+    lightSurface.style.setProperty('--light-y', `${((lightPosition.y - rect.top) / rect.height * 100).toFixed(1)}%`);
+    lightSurface.classList.add('is-lit');
+  });
+}
+document.addEventListener('pointermove', onSurfacePointer, { passive: true });
+document.addEventListener('pointerleave', clearSurfaceLight);
+window.addEventListener('blur', clearSurfaceLight);
+setAssistantState('idle');
+syncVisualPreferences();
 
 function toast(message) {
   clearTimeout(toastTimer);
@@ -87,6 +157,7 @@ compactInputQuery.addEventListener('change', updateInputPlaceholder);
 function setVoice(active) {
   voicePreview = active;
   energy = active ? .55 : 0;
+  setAssistantState(active ? 'listening' : 'idle');
   $('#mic-button').setAttribute('aria-pressed', String(active));
   $('#mic-button').setAttribute('aria-label', active ? 'Stop voice preview' : 'Preview voice mode');
   updateInputPlaceholder();
@@ -128,6 +199,10 @@ function demoPrompt(text, method = 'text') {
   processingTimer = null;
   closePopovers();
   if (voicePreview) setVoice(false);
+  setAssistantState('thinking');
+  scene.cue?.('submit');
+  animateSurface($('.request-island'), 'is-arriving');
+  animateSurface($('#composer'), 'is-sending');
   $('#current-request').textContent = text;
   selectedConversation = text;
   $('#request-method use').setAttribute('href', method === 'voice' ? '#i-wave' : '#i-keyboard');
@@ -159,6 +234,10 @@ function demoPrompt(text, method = 'text') {
       $('.response-island').classList.remove('is-thinking');
       $('#active-task-description').textContent = 'Complete';
       energy = 0;
+      setAssistantState('complete');
+      scene.cue?.('complete');
+      animateSurface($('.response-island'), 'is-revealed');
+      animateSurface($('.task-row.running'), 'just-completed');
       $('#live-status').textContent = 'Preview complete. ' + $('#current-response').textContent;
     }
   }, 240);
@@ -258,6 +337,7 @@ document.querySelectorAll('.task-row').forEach((row) => {
       return;
     }
     const complete = row.classList.toggle('is-complete');
+    if (complete) animateSurface(row, 'just-completed');
     row.setAttribute('aria-pressed', String(complete));
     const description = row.querySelector('.task-description');
     if (!description.dataset.original) description.dataset.original = description.textContent;
@@ -292,6 +372,7 @@ function actionButton(text, symbol, className, action) {
 }
 
 function syncExpandedPage() {
+  clearSurfaceLight();
   $('.orbit-app').classList.toggle('is-page-open', pageExpanded);
   $('#side-panel').classList.toggle('is-expanded', pageExpanded);
   for (const selector of ['.request-island', '.response-island', '#composer', '.orbit-wordmark', '#singularity']) {
@@ -585,9 +666,13 @@ function settingControl(setting) {
   button.type = 'button';
   button.setAttribute('role', 'switch');
   button.setAttribute('aria-label', setting.label);
-  button.setAttribute('aria-checked', String(settings[setting.key]));
+  const systemPaused = setting.key === 'motion' && reducedMotion.matches;
+  button.setAttribute('aria-checked', String(settings[setting.key] && !systemPaused));
+  button.disabled = systemPaused;
+  if (systemPaused) copy.querySelector('small').textContent = 'Paused by your device’s reduced-motion setting';
   button.addEventListener('click', () => {
     settings[setting.key] = !settings[setting.key];
+    syncVisualPreferences();
     button.setAttribute('aria-checked', String(settings[setting.key]));
     updateSettingsPreview();
   });
@@ -596,10 +681,19 @@ function settingControl(setting) {
 }
 
 function updateSettingsPreview() {
+  const motionEnabled = settings.motion && !reducedMotion.matches;
+  const motionControl = $('.setting-row .switch[aria-label="Ambient motion"]');
+  if (motionControl) {
+    motionControl.disabled = reducedMotion.matches;
+    motionControl.setAttribute('aria-checked', String(motionEnabled));
+    motionControl.closest('.setting-row').querySelector('small').textContent = reducedMotion.matches
+      ? 'Paused by your device’s reduced-motion setting' : 'Let the singularity drift';
+  }
   const preview = $('.settings-preview');
   if (!preview) return;
-  preview.dataset.motion = String(settings.motion);
-  preview.querySelector('.preview-motion-status').textContent = settings.motion ? 'Ambient motion is on' : 'Ambient motion is paused';
+  preview.dataset.motion = String(motionEnabled);
+  preview.querySelector('.preview-motion-status').textContent = reducedMotion.matches
+    ? 'Ambient motion is paused by your device' : motionEnabled ? 'Ambient motion is on' : 'Ambient motion is paused';
   preview.querySelector('.preview-interaction-status').textContent = settings.interaction ? 'Cursor gravity is on' : 'Cursor gravity is off';
 }
 
@@ -707,9 +801,21 @@ document.addEventListener('keydown', (event) => {
     else $('#message-input').focus();
   }
 });
-reducedMotion.addEventListener('change', (event) => {
-  settings.motion = !event.matches;
-  $('.setting-row .switch[aria-label="Ambient motion"]')?.setAttribute('aria-checked', String(settings.motion));
+reducedMotion.addEventListener('change', () => {
+  syncVisualPreferences();
   updateSettingsPreview();
 });
-window.addEventListener('pagehide', () => { scene.destroy(); clearInterval(processingTimer); clearTimeout(toastTimer); });
+window.addEventListener('pagehide', (event) => {
+  if (event.persisted) {
+    clearSurfaceLight();
+    return;
+  }
+  scene.destroy();
+  clearInterval(processingTimer);
+  clearTimeout(toastTimer);
+  clearTimeout(settleTimer);
+  clearSurfaceLight();
+  document.removeEventListener('pointermove', onSurfacePointer);
+  document.removeEventListener('pointerleave', clearSurfaceLight);
+  window.removeEventListener('blur', clearSurfaceLight);
+});

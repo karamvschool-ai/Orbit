@@ -21,7 +21,7 @@ export function createCoreField({radius=112}={}) {
     const fragment=`precision mediump float;
       varying vec2 v_uv;
       uniform vec2 u_pointer,u_direction;
-      uniform float u_radius,u_bounds,u_opening,u_stretch,u_time,u_energy;
+      uniform float u_radius,u_bounds,u_opening,u_stretch,u_time,u_energy,u_listening,u_thinking,u_complete;
       vec3 transported(vec2 world) {
         if(u_opening<.001)return vec3(world,1000.);
         vec2 d=world-u_pointer;
@@ -48,26 +48,39 @@ export function createCoreField({radius=112}={}) {
         float sdf=max(outerSdf,-material.z);
         float black=1.-smoothstep(-.46,.46,sdf);
         float r=length(world),angle=atan(world.y,world.x);
-        float folds=sin(angle*7.+u_time*.43)*1.15+
-          sin(angle*13.-u_time*.29)*.63+sin(angle*23.+u_time*.19)*.31;
+        float listenWave=.5+.5*sin(u_time*3.2);
+        float stateBreath=1.+u_listening*(.06+.17*listenWave)+u_thinking*.045;
+        float folds=sin(angle*7.+u_time*.43)*1.6+
+          sin(angle*13.-u_time*.29)*.92+sin(angle*23.+u_time*.19)*.38;
         float crest=outerSdf-2.2-folds;
-        float arcs=pow(.5+.5*cos(angle-.35-u_time*.025),23.)+
-          pow(.5+.5*cos(angle-2.08+u_time*.019),19.)+
-          pow(.5+.5*cos(angle-3.88-u_time*.023),28.)+
-          pow(.5+.5*cos(angle-5.23+u_time*.018),25.);
+        float arcs=pow(.5+.5*cos(angle-.35-u_time*.035),23.)+
+          pow(.5+.5*cos(angle-2.08+u_time*.029),19.)+
+          pow(.5+.5*cos(angle-3.88-u_time*.033),28.)+
+          pow(.5+.5*cos(angle-5.23+u_time*.028),25.);
         arcs=clamp(arcs,0.,1.);
-        float scattering=clamp(.48+.30*arcs+.18*sin(angle*4.+u_time*.18)+.13*sin(angle*9.-u_time*.24),.12,1.);
-        float contrast=(exp(-pow((outerSdf-7.6-folds*.8)/4.5,2.))*.48+
-          exp(-pow((outerSdf-13.)/13.,2.))*.095)*scattering;
-        float breath=1.+.09*clamp(u_energy,0.,1.)*(.7+.3*sin(u_time*1.4));
-        float glow=exp(-pow((outerSdf-2.4-folds*.45)/(4.6*breath*(.8+.45*arcs)),2.))*(.60+.36*arcs);
-        float caustic=exp(-crest*crest/((2.1+arcs*4.8)*breath))*(.56+.43*arcs);
-        float stray=exp(-pow((outerSdf-6.4-folds*2.1)/.85,2.))*(.08+.52*arcs)*arcs;
+        float moving=pow(.5+.5*cos(angle-u_time*(.28+u_thinking*.46)),190.);
+        float secondary=pow(.5+.5*cos(angle+u_time*.17-2.4),280.)*.38;
+        float highlight=clamp(moving+secondary,0.,1.);
+        float patch=clamp(.15+.74*arcs+.16*sin(angle*4.+u_time*.18)+.11*sin(angle*9.-u_time*.24),.035,1.);
+        float shoulder=(exp(-pow((outerSdf-8.4-folds*.9)/(4.1+arcs*1.8),2.))*.50+
+          exp(-pow((outerSdf-15.)/11.,2.))*.075)*patch;
+        float breath=stateBreath*(1.+.09*clamp(u_energy,0.,1.)*(.7+.3*sin(u_time*1.4)));
+        float glow=exp(-pow((outerSdf-2.5-folds*.55)/(3.6*breath*(.73+.53*arcs)),2.))*(.28+.68*arcs);
+        float caustic=exp(-crest*crest/((1.3+arcs*4.5)*breath))*(.25+.74*arcs);
+        float narrow=exp(-pow((outerSdf-1.6-folds*.82)/.82,2.))*highlight*.95;
+        float stray=exp(-pow((outerSdf-7.0-folds*2.0)/.78,2.))*(.04+.63*arcs)*arcs;
         float exterior=smoothstep(u_radius-1.,u_radius+.6,r);
-        float white=clamp(glow+caustic*(1.-glow)+stray*(1.-glow),0.,1.)*exterior;
-        float shade=contrast*exterior;
+        float white=clamp(glow+caustic*(1.-glow)+narrow*(1.-glow)+stray*(1.-glow),0.,1.)*exterior;
+        float shade=shoulder*exterior;
+        if(u_complete>=0.) {
+          float progress=clamp(u_complete,0.,1.);
+          float envelope=sin(progress*3.14159265)*pow(1.-progress,.7)*.42;
+          float ripple=exp(-pow((r-u_radius-5.-progress*48.)/1.1,2.))*envelope;
+          shade=clamp(shade+ripple*.32,0.,1.);
+          white=clamp(white+exp(-pow((r-u_radius-3.-progress*48.)/1.3,2.))*envelope,0.,1.);
+        }
         float coronaAlpha=white+shade*(1.-white);
-        float coronaRgb=white+shade*.33*(1.-white);
+        float coronaRgb=white+shade*.27*(1.-white);
         float alpha=black+coronaAlpha*(1.-black);
         float rgb=coronaRgb*(1.-black)/max(alpha,.0001);
         gl_FragColor=vec4(vec3(rgb),alpha);
@@ -89,17 +102,20 @@ export function createCoreField({radius=112}={}) {
       const position=gl.getAttribLocation(resources.program,'a_position');
       gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
       const uniform=name=>gl.getUniformLocation(resources.program,name);
-      const uniforms=Object.fromEntries(['pointer','direction','radius','bounds','opening','stretch','time','energy'].map(name=>[name,uniform(`u_${name}`)]));
+      const uniforms=Object.fromEntries(['pointer','direction','radius','bounds','opening','stretch','time','energy','listening','thinking','complete'].map(name=>[name,uniform(`u_${name}`)]));
       gl.uniform1f(uniforms.radius,radius);gl.uniform1f(uniforms.bounds,BOUNDS);gl.viewport(0,0,SIZE,SIZE);
       let disposed=false;
       return {
         bounds:BOUNDS,
-        render(pointer,strength,energy=0,delta=1/60,time){
+        displacePoint:(x,y)=>fluid.displacePoint(x,y),
+        render(pointer,strength,energy=0,delta=1/60,time,visual={}){
           if(disposed)return canvas;
           fluid.step(pointer,strength,delta,time);const state=fluid.getState();
           gl.uniform2f(uniforms.pointer,state.x,state.y);gl.uniform2f(uniforms.direction,state.dx,state.dy);
           gl.uniform1f(uniforms.opening,state.opening);gl.uniform1f(uniforms.stretch,state.stretch);
           gl.uniform1f(uniforms.time,state.time);gl.uniform1f(uniforms.energy,energy);
+          gl.uniform1f(uniforms.listening,visual.listening||0);gl.uniform1f(uniforms.thinking,visual.thinking||0);
+          gl.uniform1f(uniforms.complete,Number.isFinite(visual.completeProgress)?visual.completeProgress:-1);
           gl.drawArrays(gl.TRIANGLES,0,6);return canvas;
         },
         destroy(){if(disposed)return;disposed=true;fluid.destroy();releaseGL();},
@@ -118,7 +134,7 @@ export function createCoreField({radius=112}={}) {
     ctx.beginPath();
     for(let i=0;i<=192;i++){
       const a=start+i/192*(end-start);
-      const irregular=Math.sin(a*7+time*.43)*1.15+Math.sin(a*13-time*.29)*.63+Math.sin(a*23+time*.19)*.31;
+      const irregular=Math.sin(a*7+time*.43)*1.6+Math.sin(a*13-time*.29)*.92+Math.sin(a*23+time*.19)*.38;
       const r=radius+offset+irregular;
       const p=fluid.displacePoint(Math.cos(a)*r,Math.sin(a)*r);
       if(!i)ctx.moveTo(...p);else ctx.lineTo(...p);
@@ -127,7 +143,8 @@ export function createCoreField({radius=112}={}) {
   }
   return {
     bounds:BOUNDS,
-    render(pointer,strength,energy=0,delta=1/60,time){
+    displacePoint:(x,y)=>fluid.displacePoint(x,y),
+    render(pointer,strength,energy=0,delta=1/60,time,visual={}){
       if(disposed)return fallback;
       fluid.step(pointer,strength,delta,time);const state=fluid.getState();
       const values=fluid.density;
@@ -137,28 +154,36 @@ export function createCoreField({radius=112}={}) {
       ctx.setTransform(2,0,0,2,BOUNDS*2,BOUNDS*2);
       ctx.save();ctx.beginPath();ctx.rect(-BOUNDS,-BOUNDS,BOUNDS*2,BOUNDS*2);
       ctx.arc(0,0,radius-.8,0,TAU,true);ctx.clip('evenodd');
-      contour(9,state.time);ctx.strokeStyle='rgba(88,92,93,.045)';ctx.lineWidth=5;
-      ctx.shadowColor='rgba(91,95,96,.06)';ctx.shadowBlur=12;ctx.stroke();
-      contour(2.5,state.time);ctx.strokeStyle='rgba(255,255,255,.42)';ctx.lineWidth=2.6;
-      ctx.shadowColor='rgba(255,255,255,.62)';ctx.shadowBlur=12*(1+Math.max(0,Math.min(1,energy))*.09);ctx.stroke();
-      contour(2.0,state.time);ctx.strokeStyle='rgba(255,255,255,.40)';ctx.lineWidth=.9;
-      ctx.shadowBlur=4;ctx.stroke();
-      contour(5.3,state.time);ctx.strokeStyle='rgba(255,255,255,.33)';ctx.lineWidth=.8;
-      ctx.shadowBlur=0;ctx.stroke();
+      const listening=Math.max(0,Math.min(1,visual.listening||0));
+      const thinking=Math.max(0,Math.min(1,visual.thinking||0));
+      const breath=1+listening*(.06+.17*(.5+.5*Math.sin(state.time*3.2)))+thinking*.045;
+      // A faint broken base supports separate pearly arcs, never a thick outline.
+      contour(2.4,state.time);ctx.strokeStyle='rgba(255,255,255,.23)';ctx.lineWidth=1.25;
+      ctx.shadowColor='rgba(255,255,255,.28)';ctx.shadowBlur=6*breath;ctx.stroke();
       for(const [center,width]of[[.35,.35],[2.08,.41],[3.88,.32],[5.23,.34]]){
-        const shift=center+Math.sin(state.time*.025+center)*.07;
+        const shift=center+Math.sin(state.time*.04+center)*.11;
+        contour(8.4,state.time,shift-width*1.3,shift+width*1.3);
+        ctx.strokeStyle='rgba(64,70,73,.23)';ctx.lineWidth=6.0;
+        ctx.shadowColor='rgba(77,83,85,.12)';ctx.shadowBlur=8;ctx.stroke();
         contour(2.1,state.time,shift-width,shift+width);
-        ctx.strokeStyle='rgba(255,255,255,.99)';ctx.lineWidth=4.1;
-        ctx.shadowColor='rgba(255,255,255,.97)';ctx.shadowBlur=11;
-        ctx.stroke();
-        contour(8.5,state.time,shift-width*1.2,shift+width*1.2);
-        ctx.strokeStyle='rgba(88,92,93,.19)';ctx.lineWidth=5.5;
-        ctx.shadowColor='rgba(91,95,96,.12)';ctx.shadowBlur=7;ctx.stroke();
-        contour(2.1,state.time,shift-width,shift+width);
-        ctx.strokeStyle='rgba(255,255,255,.99)';ctx.lineWidth=3.5;
-        ctx.shadowColor='rgba(255,255,255,.94)';ctx.shadowBlur=8;ctx.stroke();
-        contour(6.4,state.time,shift-width*.73,shift+width*.73);
-        ctx.strokeStyle='rgba(255,255,255,.61)';ctx.lineWidth=.9;ctx.shadowBlur=3;ctx.stroke();
+        ctx.strokeStyle='rgba(255,255,255,.96)';ctx.lineWidth=3.7*breath;
+        ctx.shadowColor='rgba(255,255,255,.93)';ctx.shadowBlur=10*breath;ctx.stroke();
+        contour(6.7,state.time,shift-width*.73,shift+width*.73);
+        ctx.strokeStyle='rgba(255,255,255,.60)';ctx.lineWidth=.8;ctx.shadowBlur=3;ctx.stroke();
+      }
+      const moving=state.time*(.28+thinking*.46);
+      for(const [center,width,alpha]of[[moving,.095,.95],[2.4-state.time*.17,.070,.42]]) {
+        contour(1.7,state.time,center-width,center+width);
+        ctx.strokeStyle=`rgba(255,255,255,${alpha})`;ctx.lineWidth=1.3;
+        ctx.shadowColor='rgba(255,255,255,.68)';ctx.shadowBlur=4;ctx.stroke();
+      }
+      if(Number.isFinite(visual.completeProgress)&&visual.completeProgress>=0) {
+        const progress=Math.max(0,Math.min(1,visual.completeProgress));
+        const alpha=Math.sin(progress*Math.PI)*(1-progress)**.7*.42;
+        ctx.shadowBlur=0;ctx.beginPath();ctx.arc(0,0,radius+5+progress*48,0,TAU);
+        ctx.strokeStyle=`rgba(60,67,70,${alpha*.32})`;ctx.lineWidth=1.1;ctx.stroke();
+        ctx.beginPath();ctx.arc(0,0,radius+3+progress*48,0,TAU);
+        ctx.strokeStyle=`rgba(255,255,255,${alpha})`;ctx.lineWidth=1.25;ctx.stroke();
       }
       ctx.restore();
       ctx.imageSmoothingEnabled=true;ctx.drawImage(grid,-BOUNDS,-BOUNDS,BOUNDS*2,BOUNDS*2);
