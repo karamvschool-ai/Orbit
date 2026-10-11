@@ -11,6 +11,8 @@ export function playStartup(app) {
   const circle = overlay.querySelector('.startup-trace circle');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   let finished = false, frame = 0, decodedFrame, mediaStart, timer, loadTimer;
+  let mediaSpan = 6.3, elapsed = 0;
+  const trails = [];
   let layout;
   let wordmark;
   const finish = () => {
@@ -20,6 +22,7 @@ export function playStartup(app) {
     clearTimeout(timer); clearTimeout(loadTimer);
     if (decodedFrame !== undefined) video.cancelVideoFrameCallback?.(decodedFrame);
     video.removeEventListener('loadeddata', onLoaded);
+    video.removeEventListener('ended', finish);
     video.pause();
     overlay.remove();
     app.style.removeProperty('opacity');
@@ -39,12 +42,18 @@ export function playStartup(app) {
     if (finished) return;
     // Every visual samples the same decoded-media clock. Buffering pauses the
     // entire composition instead of letting CSS run ahead of the black hole.
-    const time = Math.max(0, video.currentTime - mediaStart);
+    elapsed = Math.max(elapsed, video.currentTime - mediaStart);
+    const time = elapsed * 6.3 / mediaSpan;
     const trace = ease(time, .2, 1.65);
     const formation = ease(time, 1.45, 2.25);
     const handoff = ease(time, 4.65, 1.65);
     circle.style.strokeDashoffset = String(1 - trace);
     circle.style.opacity = String(ease(time, .2, .08) * (1 - ease(time, 2.15, 1.15)));
+    const trailOpacity = ease(time, .2, .12) * (1 - ease(time, 1.55, .3));
+    for (const trail of trails) {
+      trail.style.strokeDashoffset = String(1 - trace * 1.1);
+      trail.style.opacity = String(trailOpacity * .7);
+    }
     video.style.opacity = String(formation * (1 - handoff));
     wordmark.style.opacity = String(ease(time, 3.55, .9));
     const farthest = Math.hypot(Math.max(layout.x, innerWidth-layout.x), Math.max(layout.y, innerHeight-layout.y));
@@ -63,6 +72,7 @@ export function playStartup(app) {
     if (finished || mediaStart !== undefined) return;
     clearTimeout(loadTimer);
     mediaStart = metadata?.mediaTime ?? video.currentTime;
+    mediaSpan = Number.isFinite(video.duration) ? Math.max(.1, Math.min(6.3, video.duration - mediaStart - .12)) : 6.3;
     video.classList.add('is-ready');
     frame = requestAnimationFrame(render);
   };
@@ -76,11 +86,27 @@ export function playStartup(app) {
   wordmark = app.querySelector('.orbit-wordmark').cloneNode(true);
   wordmark.classList.add('startup-wordmark');
   overlay.append(wordmark);
+  const ns = 'http://www.w3.org/2000/svg';
+  const field = document.createElementNS(ns, 'svg');
+  field.setAttribute('viewBox', '-520 -320 1040 640');
+  field.classList.add('startup-currents');
+  for (let i=0; i<28; i++) {
+    const angle = i*Math.PI*2/28;
+    const point = (radius,a) => `${(Math.cos(a)*radius).toFixed(2)},${(Math.sin(a)*radius*.78).toFixed(2)}`;
+    const trail = document.createElementNS(ns, 'path');
+    trail.setAttribute('d', `M${point(440,angle)} C${point(330,angle+.32)} ${point(190,angle+.8)} ${point(118,angle+1.25)}`);
+    trail.setAttribute('pathLength', '1');
+    trail.style.strokeWidth = i%4===0 ? '1.4px' : '.7px';
+    field.append(trail); trails.push(trail);
+  }
+  overlay.querySelector('.startup-position').append(field);
   app.inert = true;
   resize();
   window.addEventListener('resize', resize, { passive: true });
   window.addEventListener('keydown', onKey);
   reduced.addEventListener('change', onPreference);
+  video.loop = false;
+  video.addEventListener('ended', finish, { once: true });
   video.addEventListener('loadeddata', onLoaded, { once: true });
   if (video.readyState >= 2) onLoaded();
   video.play().catch(finish);
