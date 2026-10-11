@@ -41,6 +41,28 @@ export function playStartup(app) {
   const wordmark = app.querySelector(".orbit-wordmark").cloneNode(true);
   wordmark.classList.add("startup-wordmark");
   overlay.append(wordmark);
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const field = document.createElementNS(svgNS, 'svg');
+  field.setAttribute('viewBox', '-520 -320 1040 640');
+  field.classList.add('startup-currents');
+  for (let i = 0; i < 28; i++) {
+    const angle = i * Math.PI * 2 / 28;
+    const point = (r,a) => `${(Math.cos(a)*r).toFixed(2)},${(Math.sin(a)*r*.78).toFixed(2)}`;
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', `M${point(440,angle)} C${point(330,angle+.32)} ${point(190,angle+.8)} ${point(118,angle+1.25)}`);
+    path.setAttribute('pathLength', '1');
+    path.style.setProperty('--trail-delay', `${.75+(i%7)*.12}s`);
+    path.style.setProperty('--trail-width', `${i%4===0?1.5:.65}px`);
+    field.append(path);
+  }
+  for (let i = 0; i < 3; i++) {
+    const ring = document.createElementNS(svgNS, 'circle');
+    ring.setAttribute('r', '112');
+    ring.classList.add('startup-shock');
+    ring.style.setProperty('--shock-delay', `${3.3+i*.18}s`);
+    field.append(ring);
+  }
+  overlay.querySelector('.startup-position').append(field);
   app.inert = true;
   resize();
   window.addEventListener('resize', resize, { passive: true });
@@ -53,5 +75,5 @@ export function playStartup(app) {
   overlay.addEventListener('animationend', event => {
     if (event.target === overlay && event.animationName === 'startup-exit') finish();
   });
-  timer = setTimeout(finish, 9800);
+  timer = setTimeout(finish, 7400);
 }
