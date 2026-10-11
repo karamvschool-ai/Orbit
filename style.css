@@ -511,5 +511,8 @@ kbd { font: inherit; background: #eaeaec; border-radius: 4px; padding: 3px 6px; 
 .startup-hole.is-ready { visibility: visible; }
 .startup-currents { position: absolute; width: calc(var(--intro-radius,112px) * 9.2857); height: calc(var(--intro-radius,112px) * 5.7143); transform: translate(-50%,-50%); overflow: visible; }
 .startup-currents path { fill: none; stroke: #fff; stroke-linecap: round; stroke-dasharray: .1 2; stroke-dashoffset: .1; opacity: 0; }
+.startup-rim-echoes { filter: drop-shadow(0 0 3px rgba(255,255,255,.65)); }
+.startup-rim-echoes circle { transform-origin: 0 0; }
+.startup-lensing-flare { position: absolute; left: calc(var(--intro-radius,112px) * -2.2); top: calc(var(--intro-radius,112px) * -1.55); width: calc(var(--intro-radius,112px) * 4.4); height: calc(var(--intro-radius,112px) * 3.1); opacity: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 48%, rgba(255,255,255,.28) 54%, rgba(255,255,255,.10) 63%, transparent 76%); -webkit-mask-image: radial-gradient(circle at center, transparent calc(var(--intro-radius,112px) * 1.05), #000 calc(var(--intro-radius,112px) * 1.25)); mask-image: radial-gradient(circle at center, transparent calc(var(--intro-radius,112px) * 1.05), #000 calc(var(--intro-radius,112px) * 1.25)); }
 .startup-wordmark { color: #fff; text-shadow: 0 0 2px #000, 0 0 7px #000; opacity: 0; }
 @media (prefers-reduced-motion: reduce) { #startup { display: none; } html.is-starting .orbit-app { opacity: 1; } }
