@@ -48,7 +48,7 @@ export function playStartup(app) {
     elapsed = Math.max(elapsed, video.currentTime - mediaStart);
     const time = elapsed * 6.3 / mediaSpan;
     const trace = ease(time, .2, 1.65);
-    const formation = ease(time, 1.45, 2.25);
+    const formation = ease(time, 1.4, 1.25);
     const handoff = ease(time, 4.65, 1.65);
     const arrival = ease(time, 1.2, .35) * (1 - ease(time, 1.7, .45));
     circle.style.strokeWidth = String(1.25 + arrival * .55);
@@ -76,7 +76,14 @@ export function playStartup(app) {
       head.node.setAttribute('cy',u*u*u*p[1]+3*u*u*t*p[3]+3*u*t*t*p[5]+t*t*t*p[7]);
       head.node.style.opacity=String(trailOpacity*(.4+trace*.6));
     }
-    video.style.opacity = String(formation * (1 - handoff));
+    // Uncover the actual footage from the photon ring outward. Brightness stays
+    // fixed: the disk forms spatially rather than dissolving in as a flat image.
+    const revealRadius = 112 * layout.scale * (.88 + formation * 4.4);
+    const revealFeather = 112 * layout.scale * (.055 + formation * .13);
+    const horizonMask = `radial-gradient(circle at center, #000 ${revealRadius-revealFeather}px, transparent ${revealRadius+revealFeather}px)`;
+    video.style.maskImage = horizonMask;
+    video.style.webkitMaskImage = horizonMask;
+    video.style.opacity = String(ease(time, 1.35, .14) * (1 - handoff));
     wordmark.style.opacity = String(ease(time, 3.55, .6));
     for (const [i,letter] of [...wordmark.children].entries()) {
       const reveal=ease(time,3.55+i*.055,.7);
