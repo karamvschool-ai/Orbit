@@ -56,8 +56,8 @@
       <section class="request-island glass" aria-label="Your current request">
         <div class="request-method" id="request-method"><svg class="icon"><use href="#i-wave"/></svg></div>
         <div class="request-content">
-          <p id="current-request">Make me a summary of my research notes.</p>
-          <div class="request-status"><span class="status-ring" id="status-ring"></span><span id="request-status">Working on your request...</span></div>
+          <p id="current-request">What would you like to do?</p>
+          <div class="request-status"><span class="status-ring" id="status-ring"></span><span id="request-status">Connecting to the local companion…</span></div>
         </div>
       </section>
 
@@ -65,23 +65,24 @@
 
       <section class="response-island glass" aria-label="Orbit's response">
         <div class="response-avatar" aria-hidden="true"><span class="orbit-ring"></span></div>
-        <p id="current-response">I reviewed your notes, organized the key points, and prepared a concise summary for you.</p>
+        <div class="response-text" id="current-response">Your personal assistant is getting ready.</div>
         <button class="more-button" id="response-more" aria-label="Response options" aria-controls="response-menu" aria-expanded="false"><span></span><span></span><span></span></button>
         <div id="response-menu" class="popover glass response-menu" hidden>
           <button id="copy-response">Copy response</button>
-          <button id="replay-response">Replay animation <svg class="icon"><use href="#i-arrow"/></svg></button>
+          <button type="button" id="stop-speech">Stop speaking</button>
+          <button id="replay-response">Read aloud <svg class="icon"><use href="#i-arrow"/></svg></button>
         </div>
       </section>
 
       <form class="composer glass" id="composer" aria-label="Message Orbit">
         <button class="round-button attach-button" type="button" id="attach-button" aria-label="Add attachment" aria-controls="attach-menu" aria-expanded="false"><svg class="icon"><use href="#i-plus"/></svg></button>
-        <input id="message-input" type="text" placeholder="Type a message or ask me anything..." aria-label="Your message" autocomplete="off" maxlength="2000" />
-        <button class="round-button mic-button" id="mic-button" type="button" aria-label="Preview voice mode" aria-pressed="false"><svg class="icon"><use href="#i-mic"/></svg></button>
+        <input id="message-input" type="text" placeholder="Type a message or ask me anything..." aria-label="Your message" autocomplete="off" maxlength="8000" />
+        <button class="round-button mic-button" id="mic-button" type="button" aria-label="Record a voice message" aria-pressed="false"><svg class="icon"><use href="#i-mic"/></svg></button>
         <button class="round-button send-button" type="submit" aria-label="Send message"><svg class="icon"><use href="#i-send"/></svg></button>
         <div id="attach-menu" class="popover glass attach-menu" hidden>
           <button id="choose-files" type="button"><svg class="icon"><use href="#i-file"/></svg> Attach files</button>
           <button id="use-example" type="button"><svg class="icon"><use href="#i-plus"/></svg> Try an example</button>
-          <p>Files stay on this device.</p>
+          <p>Selected text/audio is sent to Groq.</p>
         </div>
         <div id="attachment-chip" class="attachment-chip glass" hidden><svg class="icon"><use href="#i-file"/></svg><span id="attachment-name"></span><button type="button" id="remove-attachment" aria-label="Remove attachment"><svg class="icon"><use href="#i-close"/></svg></button></div>
       </form>
@@ -92,23 +93,11 @@
         <header class="task-header"><h1>Tasks</h1><button class="plain-button" id="close-tasks" aria-label="Close tasks"><svg class="icon"><use href="#i-close"/></svg></button></header>
         <section class="task-section" aria-labelledby="current-tasks-heading">
           <h2 id="current-tasks-heading">Current</h2>
-          <div class="task-list">
-            <button class="task-row running" data-task="research" aria-label="Summarizing research notes, 45 percent complete">
-              <span class="task-check progress" style="--progress:45%"><span></span></span>
-              <span class="task-copy"><span class="task-title" id="active-task-title">Summarizing research notes</span><span class="task-description" id="active-task-description">Analyzing 12 files...</span></span>
-              <span class="task-percent" id="task-percent">45%</span>
-            </button>
-            <button class="task-row" data-task="files" aria-label="Mark organizing project files complete"><span class="task-check"></span><span class="task-copy"><span class="task-title">Organizing project files</span><span class="task-description">Queued</span></span></button>
-            <button class="task-row" data-task="email" aria-label="Mark drafting follow-up email complete"><span class="task-check"></span><span class="task-copy"><span class="task-title">Drafting follow-up email</span><span class="task-description">Queued</span></span></button>
-          </div>
+          <div class="task-list"><p class="workspace-note">No active tasks.</p></div>
         </section>
         <section class="task-section upcoming" aria-labelledby="upcoming-tasks-heading">
           <h2 id="upcoming-tasks-heading">Upcoming</h2>
-          <div class="task-list">
-            <button class="task-row" data-task="reply" aria-label="Mark reply to team email complete"><span class="task-check"></span><span class="task-copy"><span class="task-title">Reply to team email</span><span class="task-description">In 30 min</span></span></button>
-            <button class="task-row" data-task="calendar" aria-label="Mark check calendar complete"><span class="task-check"></span><span class="task-copy"><span class="task-title">Check calendar</span><span class="task-description">In 2 hr</span></span></button>
-            <button class="task-row" data-task="meeting" aria-label="Mark prepare meeting notes complete"><span class="task-check"></span><span class="task-copy"><span class="task-title">Prepare meeting notes</span><span class="task-description">In 3 hr</span></span></button>
-          </div>
+          <div class="task-list"><p class="workspace-note">Your scheduled tasks will appear here.</p></div>
         </section>
       </aside>
       <button class="restore-tasks glass" id="restore-tasks" aria-label="Open tasks" aria-controls="task-panel" aria-expanded="true" hidden><svg class="icon"><use href="#i-grid"/></svg><span>Tasks</span></button>

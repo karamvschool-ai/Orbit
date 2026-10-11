@@ -519,3 +519,45 @@ kbd { font: inherit; background: #eaeaec; border-radius: 4px; padding: 3px 6px; 
 .startup-lensing-flare { position: absolute; left: calc(var(--intro-radius,112px) * -2.2); top: calc(var(--intro-radius,112px) * -1.55); width: calc(var(--intro-radius,112px) * 4.4); height: calc(var(--intro-radius,112px) * 3.1); opacity: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 48%, rgba(255,255,255,.28) 54%, rgba(255,255,255,.10) 63%, transparent 76%); -webkit-mask-image: radial-gradient(circle at center, transparent calc(var(--intro-radius,112px) * 1.05), #000 calc(var(--intro-radius,112px) * 1.25)); mask-image: radial-gradient(circle at center, transparent calc(var(--intro-radius,112px) * 1.05), #000 calc(var(--intro-radius,112px) * 1.25)); }
 .startup-wordmark { color: #fff; text-shadow: 0 0 2px #000, 0 0 7px #000; opacity: 0; z-index: 2; }
 @media (prefers-reduced-motion: reduce) { #startup { display: none; } html.is-starting .orbit-app { opacity: 1; } }
+
+/* Real assistant surfaces */
+#current-request, #current-response { overflow-wrap: anywhere; }
+#current-response { max-height: 135px; overflow-y: auto; scrollbar-width: thin; white-space: pre-wrap; }
+.thread-message p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.assistant-form { display: grid; gap: 10px; margin: 16px 0; }
+.assistant-form label { display: grid; gap: 8px; font-size: 12px; color: #686870; }
+.assistant-form input, .assistant-settings select { width: 100%; min-width: 0; padding: 12px; font: inherit; font-size: 13px; border: 1px solid #dcdce2; background: #ffffffa8; border-radius: 12px; color: #17171b; }
+.assistant-settings { margin-bottom: 22px; }
+.assistant-settings .page-secondary { margin-top: 12px; }
+.assistant-settings .setting-row input { accent-color: #17171b; width: 18px; height: 18px; }
+.task-actions { display:flex; gap:8px; margin: 0 0 10px 38px; }
+.task-actions .page-secondary { font-size: 11px; padding: 6px 10px; min-height: 30px; }
+.live-progress { border-color: #b9b9c1; border-top-color: #17171b; animation: assistant-spin 1s linear infinite; }
+@keyframes assistant-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .live-progress { animation: none; } }
+.workspace-file { width:100%; border:0; background:transparent; text-align:left; cursor:pointer; }
+.assistant-settings p { font-size:12px; line-height:1.6; }
+.send-button:disabled { opacity:.45; cursor:wait; }
+.workspace-image { display: block; width: 100%; max-height: 340px; object-fit: contain; border-radius: 14px; margin-top: 16px; background: #eeeeF2; }
+.response-text { margin:0; padding-right:24px; font-size:17px; line-height:1.4; letter-spacing:-.25px; min-width:0; width:100%; }
+#current-response { white-space:normal; }
+.response-island .response-text p { padding:0; font:inherit; margin:0 0 8px; }
+.response-island .response-text p:last-child { margin-bottom:0; }
+.response-text ul, .response-text ol { padding-left:20px; margin:8px 0; }
+.response-text a, .thread-content a { color:inherit; text-underline-offset:3px; }
+.response-text pre, .thread-content pre { overflow:auto; background:#eeeef3; padding:12px; border-radius:10px; font-size:12px; white-space:pre; }
+.response-text code, .thread-content code { font-size:.88em; }
+.thread-content { color:#303037; font-size:15px; line-height:1.75; overflow-wrap:anywhere; }
+.thread-content p { white-space:normal; }
+.thread-content table { border-collapse:collapse; font-size:13px; display:block; overflow:auto; }
+.thread-content td, .thread-content th { padding:8px; border:1px solid #dcdce2; }
+@media (max-width:1280px) { .response-text { font-size:15px; } }
+@media (max-width:550px) { .response-text { font-size:13px; padding-right:22px; } }
+#current-request { max-height:64px; overflow-y:auto; scrollbar-width:thin; }
+.request-content { min-width:0; }
+.mic-button:disabled { opacity:.5; cursor:wait; }
+.side-panel.is-expanded .assistant-settings { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:8px 36px; }
+.side-panel.is-expanded .assistant-settings > :is(h3,p) { grid-column:1 / -1; }
+.speech-settings { min-width:0; padding-top:16px; }
+.speech-settings .setting-row { padding-top:0; }
+@media(max-width:700px) { .side-panel.is-expanded .assistant-settings { display:block; } }
