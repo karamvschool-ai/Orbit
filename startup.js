@@ -48,13 +48,13 @@ export function playStartup(app) {
     elapsed = Math.max(elapsed, video.currentTime - mediaStart);
     const time = elapsed * 6.3 / mediaSpan;
     const trace = ease(time, .2, 1.65);
-    const formation = ease(time, 1.45, 1.65);
+    const formation = ease(time, 1.85, 1.25);
     const handoff = ease(time, 4.55, 1.75);
     const coreMerge = ease(time, 4.95, 1.35);
     const arrival = ease(time, 1.2, .35) * (1 - ease(time, 1.7, .45));
     circle.style.strokeWidth = String(1.25 + arrival * .55);
     circle.style.strokeDashoffset = String(1 - trace);
-    circle.style.opacity = String(ease(time, .2, .08) * (1 - ease(time, 1.9, .85)));
+    circle.style.opacity = String(ease(time, .2, .08) * (1 - ease(time, 2.1, .7)));
     const trailOpacity = ease(time, .2, .12) * (1 - ease(time, 1.55, .3));
     for (const trail of trails) {
       trail.style.strokeDashoffset = String(.1 - trace * 1.2);
@@ -77,15 +77,15 @@ export function playStartup(app) {
       head.node.setAttribute('cy',u*u*u*p[1]+3*u*u*t*p[3]+3*u*t*t*p[5]+t*t*t*p[7]);
       head.node.style.opacity=String(trailOpacity*(.4+trace*.6));
     }
-    // Uncover the actual footage from the photon ring outward. Brightness stays
-    // fixed: the disk forms spatially rather than dissolving in as a flat image.
-    // Reveal an annulus first: footage also contains a bright disk across its
-    // center, so an outer aperture alone exposes that stripe before the rim.
-    const revealRadius = 112 * layout.scale * (.5 + formation * 4.78) * (1 - handoff * .78);
-    const revealFeather = 112 * layout.scale * (.04 + formation * .31);
-    const innerRadius = 112 * layout.scale * 1.18 * (1-ease(time,1.85,.7));
-    const innerFeather = 112 * layout.scale * .09;
-    const horizonMask = `radial-gradient(circle at center, #000 ${revealRadius-revealFeather}px, rgba(0,0,0,.5) ${revealRadius}px, transparent ${revealRadius+revealFeather}px), radial-gradient(circle at center, transparent ${innerRadius-innerFeather}px, #000 ${innerRadius+innerFeather}px)`;
+    // Continue the completed trace clockwise through the footage. This is an
+    // angular uncovering at fixed size, not an expanding aperture or dissolve.
+    const sweep = formation * 380;
+    const seam = Math.min(sweep/2,24*(1-ease(time,2.65,.45)));
+    const angularMask = formation <= 0 ? 'linear-gradient(transparent, transparent)' :
+      `conic-gradient(from 0deg at center, transparent 0deg, #000 ${seam}deg, #000 ${Math.max(seam,sweep-32)}deg, transparent ${sweep}deg, transparent 380deg)`;
+    const revealRadius = 112 * layout.scale * 5.28 * (1-handoff*.78);
+    const revealFeather = 112 * layout.scale * .35;
+    const horizonMask = `${angularMask}, radial-gradient(circle at center, #000 ${revealRadius-revealFeather}px, rgba(0,0,0,.5) ${revealRadius}px, transparent ${revealRadius+revealFeather}px)`;
     video.style.maskImage = horizonMask;
     video.style.webkitMaskImage = horizonMask;
     video.style.maskComposite = 'intersect';
