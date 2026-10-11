@@ -48,20 +48,20 @@ export function playStartup(app) {
     elapsed = Math.max(elapsed, video.currentTime - mediaStart);
     const time = elapsed * 6.3 / mediaSpan;
     const trace = ease(time, .2, 1.65);
-    const formation = ease(time, 1.4, 1.45);
+    const formation = ease(time, 1.45, 1.65);
     const handoff = ease(time, 4.55, 1.75);
     const coreMerge = ease(time, 4.95, 1.35);
     const arrival = ease(time, 1.2, .35) * (1 - ease(time, 1.7, .45));
     circle.style.strokeWidth = String(1.25 + arrival * .55);
     circle.style.strokeDashoffset = String(1 - trace);
-    circle.style.opacity = String(ease(time, .2, .08) * (1 - ease(time, 2.15, 1.15)));
+    circle.style.opacity = String(ease(time, .2, .08) * (1 - ease(time, 1.9, .85)));
     const trailOpacity = ease(time, .2, .12) * (1 - ease(time, 1.55, .3));
     for (const trail of trails) {
       trail.style.strokeDashoffset = String(.1 - trace * 1.2);
       trail.style.opacity = String(trailOpacity * .7);
     }
     // Rim echoes carry the same arrival energy into the disk's lensing pulse.
-    const ignition = ease(time, 1.6, .55) * (1 - ease(time, 2.75, .8));
+    const ignition = ease(time, 1.85, .55) * (1 - ease(time, 2.75, .8));
     for (let i=0; i<echoes.length; i++) {
       const ring=echoes[i];
       ring.style.strokeDashoffset=String(1-trace);
@@ -79,12 +79,18 @@ export function playStartup(app) {
     }
     // Uncover the actual footage from the photon ring outward. Brightness stays
     // fixed: the disk forms spatially rather than dissolving in as a flat image.
-    const revealRadius = 112 * layout.scale * (.88 + formation * 4.4) * (1 - handoff * .78);
-    const revealFeather = 112 * layout.scale * (.13 + formation * .22);
-    const horizonMask = `radial-gradient(circle at center, #000 ${revealRadius-revealFeather}px, rgba(0,0,0,.5) ${revealRadius}px, transparent ${revealRadius+revealFeather}px)`;
+    // Reveal an annulus first: footage also contains a bright disk across its
+    // center, so an outer aperture alone exposes that stripe before the rim.
+    const revealRadius = 112 * layout.scale * (.5 + formation * 4.78) * (1 - handoff * .78);
+    const revealFeather = 112 * layout.scale * (.04 + formation * .31);
+    const innerRadius = 112 * layout.scale * 1.18 * (1-ease(time,1.85,.7));
+    const innerFeather = 112 * layout.scale * .09;
+    const horizonMask = `radial-gradient(circle at center, #000 ${revealRadius-revealFeather}px, rgba(0,0,0,.5) ${revealRadius}px, transparent ${revealRadius+revealFeather}px), radial-gradient(circle at center, transparent ${innerRadius-innerFeather}px, #000 ${innerRadius+innerFeather}px)`;
     video.style.maskImage = horizonMask;
     video.style.webkitMaskImage = horizonMask;
-    video.style.opacity = String(ease(time, 1.35, .14) * (1 - coreMerge));
+    video.style.maskComposite = 'intersect';
+    video.style.webkitMaskComposite = 'source-in';
+    video.style.opacity = String(1 - coreMerge);
     wordmark.style.opacity = String(ease(time, 3.55, .6) * (1-coreMerge));
     for (const [i,letter] of [...wordmark.children].entries()) {
       const reveal=ease(time,3.55+i*.055,.7);
