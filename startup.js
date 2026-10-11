@@ -15,7 +15,7 @@ export function playStartup(app) {
   const trails = [];
   const heads = [];
   const echoes = [];
-  let flare;
+  let flare, backdrop;
   let layout;
   let wordmark;
   const finish = () => {
@@ -48,8 +48,9 @@ export function playStartup(app) {
     elapsed = Math.max(elapsed, video.currentTime - mediaStart);
     const time = elapsed * 6.3 / mediaSpan;
     const trace = ease(time, .2, 1.65);
-    const formation = ease(time, 1.4, 1.25);
-    const handoff = ease(time, 4.65, 1.65);
+    const formation = ease(time, 1.4, 1.45);
+    const handoff = ease(time, 4.55, 1.75);
+    const coreMerge = ease(time, 4.95, 1.35);
     const arrival = ease(time, 1.2, .35) * (1 - ease(time, 1.7, .45));
     circle.style.strokeWidth = String(1.25 + arrival * .55);
     circle.style.strokeDashoffset = String(1 - trace);
@@ -78,25 +79,26 @@ export function playStartup(app) {
     }
     // Uncover the actual footage from the photon ring outward. Brightness stays
     // fixed: the disk forms spatially rather than dissolving in as a flat image.
-    const revealRadius = 112 * layout.scale * (.88 + formation * 4.4);
-    const revealFeather = 112 * layout.scale * (.055 + formation * .13);
-    const horizonMask = `radial-gradient(circle at center, #000 ${revealRadius-revealFeather}px, transparent ${revealRadius+revealFeather}px)`;
+    const revealRadius = 112 * layout.scale * (.88 + formation * 4.4) * (1 - handoff * .78);
+    const revealFeather = 112 * layout.scale * (.13 + formation * .22);
+    const horizonMask = `radial-gradient(circle at center, #000 ${revealRadius-revealFeather}px, rgba(0,0,0,.5) ${revealRadius}px, transparent ${revealRadius+revealFeather}px)`;
     video.style.maskImage = horizonMask;
     video.style.webkitMaskImage = horizonMask;
-    video.style.opacity = String(ease(time, 1.35, .14) * (1 - handoff));
-    wordmark.style.opacity = String(ease(time, 3.55, .6));
+    video.style.opacity = String(ease(time, 1.35, .14) * (1 - coreMerge));
+    wordmark.style.opacity = String(ease(time, 3.55, .6) * (1-coreMerge));
     for (const [i,letter] of [...wordmark.children].entries()) {
       const reveal=ease(time,3.55+i*.055,.7);
       letter.style.clipPath=`inset(${(1-reveal)*50}% 0 ${(1-reveal)*50}% 0)`;
     }
     const farthest = Math.hypot(Math.max(layout.x, innerWidth-layout.x), Math.max(layout.y, innerHeight-layout.y));
-    const radius = handoff * (farthest + 150);
-    const feather = handoff * 110;
-    const mask = `radial-gradient(circle at ${layout.x}px ${layout.y}px, transparent ${Math.max(-4,radius-feather-4)}px, #000 ${radius+feather-2}px)`;
-    overlay.style.maskImage = mask;
-    overlay.style.webkitMaskImage = mask;
-    // The opaque black overlay already covers the page before the handoff.
-    // Reveal the actual canvas through a feathered aperture, with no scale jump.
+    // The darkness recedes toward the fixed core while the disk collapses into
+    // its rim. Keep the footage separate so the page reveal cannot cut it off.
+    const radius = (farthest + 150) * (1-handoff) + 112 * layout.scale * handoff;
+    const feather = 100 + handoff * 70;
+    const mask = `radial-gradient(circle at ${layout.x}px ${layout.y}px, #000 ${Math.max(0,radius-feather)}px, rgba(0,0,0,.5) ${radius}px, transparent ${radius+feather}px)`;
+    backdrop.style.maskImage = mask;
+    backdrop.style.webkitMaskImage = mask;
+    backdrop.style.opacity = String(1-coreMerge);
     app.style.opacity = handoff > 0 ? '1' : '0';
     if (time >= 6.3) { finish(); return; }
     frame = requestAnimationFrame(render);
@@ -120,6 +122,8 @@ export function playStartup(app) {
   wordmark.classList.add('startup-wordmark');
   overlay.append(wordmark);
   const ns = 'http://www.w3.org/2000/svg';
+  backdrop=document.createElement('div'); backdrop.classList.add('startup-backdrop');
+  overlay.append(backdrop);
   flare=document.createElement('div'); flare.classList.add('startup-lensing-flare');
   overlay.querySelector('.startup-position').append(flare);
   const field = document.createElementNS(ns, 'svg');
