@@ -50,5 +50,5 @@ export function playStartup(app) {
   overlay.addEventListener('animationend', event => {
     if (event.target === overlay && event.animationName === 'startup-exit') finish();
   });
-  timer = setTimeout(finish, 7200);
+  timer = setTimeout(finish, 9800);
 }
