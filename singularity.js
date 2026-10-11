@@ -72,7 +72,7 @@ function createRefractionPass() {
   };
 }
 
-export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () => true, getInteraction = () => true, getState = () => 'idle', onLight = () => {} } = {}) {
+export function createSingularity(canvas, { getEnergy = () => 0, getSpeechLevel = () => 0, getProgress = () => 1, getMotion = () => true, getInteraction = () => true, getState = () => 'idle', onLight = () => {} } = {}) {
   const ctx = canvas.getContext('2d', { alpha: true });
   if (!ctx) return { cue() {}, destroy() {} };
   const coreField = createCoreField();
@@ -85,8 +85,9 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
   let width = 0, height = 0, dpr = 1, scale = 1, centerX = 0, centerY = 0;
   let frame = 0, refreshTimer = 0, destroyed = false, phase = 0, lastTime = 0, energy = 0, pressStrength = 0;
   let submitAge = Infinity, completeAge = Infinity, wakeUntil = 0, previousState = '', previousMotion = null, previousInteraction = null;
-  const stateMix = { listening: 0, thinking: 0 };
-  const visual = { listening: 0, thinking: 0, completeProgress: -1 };
+  const stateMix = { listening: 0, thinking: 0, speaking: 0 };
+  let voiceLevel=0, fillProgress=1;
+  const visual = { listening: 0, thinking: 0, progress: 1, completeProgress: -1 };
   const scratch = [0, 0];
   const accretionBuffers = Array.from({length:11},()=>new Float32Array(87*2));
   const currentBuffer = new Float32Array(25*4);
@@ -272,7 +273,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
   }
   function drawRibbons(time) {
     ctx.lineCap = 'round';
-    const breath = Math.sin(time*.7)*1.5*(1-stateMix.listening) + Math.sin(time*3.2)*4*stateMix.listening;
+    const breath = Math.sin(time*.7)*1.5*(1-stateMix.listening) + Math.sin(time*3.2)*4*stateMix.listening + voiceLevel*22;
     const sampleStep = width <= 600 ? 2 : 1;
     for (let n=0;n<ribbons.length;n++) {
       const ribbon = ribbons[n], s = ribbon.surface, major = ribbon.major;
@@ -288,7 +289,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
         const outerDrift=Math.sin(time*.52+ribbon.phase*.6);
         const innerDrift=Math.sin(time*1.44+ribbon.phase*.6);
         const displacement=(mix(outerWave,innerWave,inner)*ribbon.bend*(1.78-inner*.88) +
-          mix(outerDrift,innerDrift,inner)*(26+breath)*(1-inner*.54))*envelope*(1-surge*.30)*(1+energy*.16);
+          mix(outerDrift,innerDrift,inner)*(26+breath)*(1-inner*.54))*envelope*(1-surge*.30)*(1+energy*.16+voiceLevel*.72) + Math.sin(t*12-time*5.2+ribbon.phase)*voiceLevel*22*envelope;
         s[i]=base[0]-dy/length*displacement;s[i+1]=base[1]+dx/length*displacement;
         s[i+2]=t;s[i+3]=envelope;
       }
@@ -566,8 +567,11 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
       previousState=state;previousMotion=motion;previousInteraction=interaction;wakeUntil=timestamp+900;
     }
     stateMix.listening=mix(stateMix.listening,state==='listening'?1:0,blend);
+    stateMix.speaking=mix(stateMix.speaking,state==='speaking'?1:0,blend);
+    voiceLevel=mix(voiceLevel,clamp(getSpeechLevel(),0,1)*stateMix.speaking,1-Math.exp(-delta/.045));
+    fillProgress=mix(fillProgress,clamp(getProgress(),0,1),1-Math.exp(-delta/.55));
     stateMix.thinking=mix(stateMix.thinking,state==='thinking'?1:0,blend);
-    if(motion)phase+=delta*(.90+stateMix.listening*.10+stateMix.thinking*.36+surge*.55);
+    if(motion)phase+=delta*(.90+stateMix.listening*.10+stateMix.thinking*.36+surge*.55+voiceLevel*.9);
     surgeProgress=clamp((phase%17-10.5)/3.5,0,1);
     surge=Math.sin(surgeProgress*Math.PI)**3;
     if(timestamp-lightTime>80){onLight(.08+.035*(.5+.5*Math.sin(phase*.72))+surge*.13,28+Math.sin(phase*.28)*14);lightTime=timestamp;}
@@ -576,7 +580,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     pointer.presence=interaction?pointer.targetPresence:0;
     pressStrength=clamp((147-Math.hypot(pointer.x,pointer.y))/27,0,1)*pointer.presence;
     energy=mix(energy,clamp(Number(getEnergy())||0,0,1),1-Math.exp(-delta/.075));
-    visual.listening=stateMix.listening;visual.thinking=stateMix.thinking;
+    visual.listening=stateMix.listening+voiceLevel*.8;visual.thinking=stateMix.thinking;visual.progress=fillProgress;
     visual.completeProgress=completeAge<1.25?completeAge/1.25:-1;
     // Advance transport once, before any geometry samples its shared displacement.
     const surface=coreField.render(pointer,pressStrength,energy,delta,phase,visual);
@@ -603,7 +607,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getMotion = () 
     for(const satellite of satellitePositions)if(satellite.depth>=0)drawSatellite(satellite);
     const cueActive=submitAge<1.35||completeAge<1.25;
     const settling=Math.abs(stateMix.listening-(state==='listening'?1:0))>.003||Math.abs(stateMix.thinking-(state==='thinking'?1:0))>.003;
-    if(motion||cueActive||settling||timestamp<wakeUntil)requestFrame();
+    if(motion||state==='speaking'||state==='thinking'||cueActive||settling||timestamp<wakeUntil)requestFrame();
     else refreshTimer=setTimeout(()=>{refreshTimer=0;requestFrame();},180);
   }
   function onVisibility() {

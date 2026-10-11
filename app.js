@@ -1,3 +1,4 @@
+import { createSpeechPlayer } from './speech-playback.js';
 import { marked } from '/vendor/marked.js';
 import DOMPurify from '/vendor/purify.js';
 import { createSingularity } from './singularity.js';
@@ -9,6 +10,7 @@ const settings = { motion: true, interaction: true, speech: true };
 const app = $('.orbit-app');
 const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
 let energy = 0;
+let speechLevel = 0, taskProgress = 1;
 let voicePreview = false;
 let assistantState = 'idle';
 let settleTimer;
@@ -30,9 +32,11 @@ let savedFiles = [];
 let runtime = null;
 let currentChatId = null;
 let requesting = false;
-let recorder, microphone, recordingTimer, recordingChunks = [], speakingAudio, speechGeneration = 0, recordingCancelled = false, microphonePending = false;
+let recorder, microphone, recordingTimer, recordingChunks = [], recordingCancelled = false, microphonePending = false;
 const scene = createSingularity($('#singularity'), {
   getEnergy: () => energy,
+  getSpeechLevel: () => speechLevel,
+  getProgress: () => taskProgress,
   getMotion: () => settings.motion && !reducedMotion.matches,
   getInteraction: () => settings.interaction && !pageExpanded,
   getState: () => assistantState,
@@ -168,38 +172,39 @@ async function api(url, options = {}) {
 }
 const post = async (url, data) => (await api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })).json();
 
-function stopSpeech() {
-  speechGeneration++;
-  if (speakingAudio) { speakingAudio.pause(); speakingAudio = null; }
-  if (assistantState === 'speaking') { energy = 0; setAssistantState('idle'); }
-}
+const meter = element('div', 'voice-meter');
+meter.setAttribute('aria-hidden','true');
+for(let i=0;i<5;i++)meter.append(element('span'));
+$('#request-method').append(meter);
+const player = createSpeechPlayer({
+  request: text => api('/api/speech', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}),
+  onLevel: (level,bands) => {
+    speechLevel=level; app.style.setProperty('--speech-level',level.toFixed(3));
+    meter.querySelectorAll('span').forEach((bar,i)=>bar.style.height=`${3+bands[i]*23}px`);
+  },
+  onState: state => {
+    $('#request-method').classList.toggle('is-speaking',state==='speaking');
+    if(state==='preparing') $('#request-status').textContent='Preparing Kokoro voice…';
+    if(state==='speaking'){energy=0;setAssistantState('speaking');$('#request-status').textContent='Speaking…';}
+    if(['complete','stopped'].includes(state)&&!requesting&&!voicePreview){energy=0;if(assistantState==='speaking')setAssistantState('idle');$('#request-status').textContent='Ready when you are.';}
+  }
+});
+function stopSpeech() { player.stop(); }
 async function speak(text) {
-  stopSpeech();
-  if (!runtime?.setup.speech) return;
-  const generation = speechGeneration;
-  const chunks = text.replace(/[*#`]/g, '').match(/[\s\S]{1,1400}(?:[.!?]\s|$)|[\s\S]{1,1400}/g) || [];
-  try {
-    for (const chunk of chunks) {
-      if (generation !== speechGeneration) return;
-      $('#request-status').textContent = 'Preparing Kokoro voice…';
-      const response = await api('/api/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: chunk }) });
-      const url = URL.createObjectURL(await response.blob());
-      if (generation !== speechGeneration) { URL.revokeObjectURL(url); return; }
-      const audio = new Audio(url); speakingAudio = audio;
-      energy = .45; setAssistantState('speaking'); $('#request-status').textContent = 'Speaking…';
-      try {
-        await new Promise((resolve, reject) => { audio.onended = resolve; audio.onerror = () => reject(Error('Audio playback failed.')); audio.onpause = resolve; audio.play().catch(reject); });
-      } finally { URL.revokeObjectURL(url); }
-    }
-  } catch (error) { toast(`Voice: ${error.message} Use Read aloud to retry.`); }
-  finally { if (generation === speechGeneration) { speakingAudio = null; energy = 0; setAssistantState('idle'); $('#request-status').textContent = 'Ready when you are.'; } }
+  if(!runtime?.setup.speech)return;
+  try {await player.speak(text);}catch(error){toast(`Voice: ${error.message} Use Read aloud to retry.`);}
+}
+function setProgress(value) {
+  taskProgress=Math.max(taskProgress,Math.min(1,value));
+  $('#status-ring').style.setProperty('--task-progress',`${taskProgress*360}deg`);
+  $('#status-ring').setAttribute('aria-label',taskProgress===1?'Complete':'Processing; exact completion time unknown');
 }
 async function setVoice(active, { cancel = false } = {}) {
   if (!active) { recordingCancelled = cancel; if (recorder?.state === 'recording') recorder.stop(); return; }
   if (voicePreview || microphonePending) return;
   if (requesting) { toast('Wait for the current response.'); return; }
   if (!runtime?.setup.hasKey) { openPanel('settings'); toast('Add your Groq Free-plan key first.'); return; }
-  stopSpeech();
+  stopSpeech(); player.unlock().catch(()=>{});
   try {
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) throw Error('Microphone recording is unavailable in this browser.');
     microphonePending = true; $('#mic-button').disabled = true;
@@ -239,6 +244,7 @@ async function sendPrompt(text, method = 'text') {
   if (!runtime?.setup.hasKey) { openPanel('settings'); toast('Add your Groq Free-plan key first.'); return; }
   stopSpeech(); closePopovers(); requesting = true;
   $('#composer .send-button').disabled = true;
+  taskProgress=0;setProgress(.08);
   setAssistantState('thinking'); scene.cue?.('submit'); energy = .8;
   animateSurface($('.request-island'), 'is-arriving'); animateSurface($('#composer'), 'is-sending');
   $('#current-request').textContent = text;
@@ -256,8 +262,9 @@ async function sendPrompt(text, method = 'text') {
       for (const line of lines) if (line.trim()) {
         const event = JSON.parse(line);
         if (event.type === 'chat') currentChatId = event.id;
+        if (typeof event.progress === 'number') setProgress(event.progress);
         if (event.type === 'status') { $('#request-status').textContent = event.text; $('#current-response').textContent = event.text; setAssistantState('thinking'); }
-        if (event.type === 'answer') { answer = event.text; renderAnswer($('#current-response'), answer); }
+        if (event.type === 'answer') { setProgress(1); answer = event.text; renderAnswer($('#current-response'), answer); }
         if (event.type === 'error') { failed = true; $('#current-response').textContent = event.text; toast(event.text); }
       }
       if (done) break;
@@ -265,7 +272,7 @@ async function sendPrompt(text, method = 'text') {
     if (!answer && !failed) throw Error('The response connection ended before completion. Check Tasks before retrying.');
   } catch (error) { failed = true; $('#current-response').textContent = error.message; toast(error.message); }
   finally {
-    requesting = false; $('#composer .send-button').disabled = false; energy = 0;
+    setProgress(1); requesting = false; $('#composer .send-button').disabled = false; energy = 0;
     $('.response-island').classList.remove('is-thinking'); $('#status-ring').classList.add('ready');
     $('#request-status').textContent = failed ? 'Request failed.' : 'Your request is complete.';
     setAssistantState(failed ? 'idle' : 'complete');
@@ -277,6 +284,7 @@ async function sendPrompt(text, method = 'text') {
 
 $('#composer').addEventListener('submit', (event) => {
   event.preventDefault();
+  player.unlock().catch(()=>{});
   const text = $('#message-input').value.trim();
   if (!text) {
     $('#message-input').focus();
@@ -636,7 +644,7 @@ function renderWorkspace(body) {
   layout.append(element('section', 'file-grid'), element('section', 'workspace-detail'));
   layout.firstChild.setAttribute('aria-label', 'Workspace files');
   layout.lastChild.setAttribute('aria-label', 'Selected file preview');
-  body.append(toolbar, layout, element('p', 'workspace-note', 'Files are saved on this Mac. Selected text and audio are sent to Groq for interpretation.'));
+  body.append(toolbar, layout, element('p', 'workspace-note', 'Files are saved on this device. Selected text and audio are sent to Groq for interpretation.'));
   renderFileCards();
   renderFilePreview();
 }
@@ -883,9 +891,9 @@ function renderAssistantSettings() {
   const label=element('label','',runtime?.setup.hasKey ? 'Replace Groq key' : 'Groq API key');
   const key=element('input');key.type='password';key.autocomplete='off';key.placeholder=runtime?.setup.hasKey ? 'Connected · enter a replacement key' : 'gsk_…';key.setAttribute('aria-label','Groq API key');label.append(key);
   const save=element('button','page-primary','Save key');save.type='submit';
-  const message=element('small','workspace-note',runtime?.setup.hasKey?'Key stored privately on this Mac.':'Create a Free-plan key at console.groq.com/keys.');message.setAttribute('role','status');
+  const message=element('small','workspace-note',runtime?.setup.hasKey?'Key stored privately on this device.':'Create a Free-plan key at console.groq.com/keys.');message.setAttribute('role','status');
   form.append(label,save,message);
-  form.addEventListener('submit',async event=>{event.preventDefault();save.disabled=true;try{if(!key.value.trim())throw Error('Enter your new Groq key.');await post('/api/settings',{groqKey:key.value.trim()});key.value='';message.textContent='Key saved privately on this Mac.';await refreshRuntime();}catch(error){message.textContent=error.message;}finally{save.disabled=false;}});
+  form.addEventListener('submit',async event=>{event.preventDefault();save.disabled=true;try{if(!key.value.trim())throw Error('Enter your new Groq key.');await post('/api/settings',{groqKey:key.value.trim()});key.value='';message.textContent='Key saved privately on this device.';await refreshRuntime();}catch(error){message.textContent=error.message;}finally{save.disabled=false;}});
   const connection = element('div', 'connection-settings'); connection.append(form); card.append(connection);
   const speechControls = element('div', 'speech-settings');
   const row=element('label','setting-row');row.append(element('span','','Read replies aloud · local Kokoro'));
@@ -894,10 +902,10 @@ function renderAssistantSettings() {
   const voice=element('select');voice.setAttribute('aria-label','Kokoro voice');
   for(const [value,label] of [['af_heart','Heart · US'],['af_bella','Bella · US'],['am_adam','Adam · US'],['bf_emma','Emma · UK'],['bm_george','George · UK']]) { const option=element('option','',label);option.value=value;voice.append(option); }
   voice.value=runtime?.setup.voice||'af_heart';voice.addEventListener('change',async()=>{try{await post('/api/settings',{voice:voice.value});await refreshRuntime();}catch(error){toast(error.message);}});speechControls.append(voice);
-  speechControls.append(actionButton('Test Kokoro voice','wave','page-secondary',()=>void speak('Hello. I’m Orbit, your personal assistant.')));
+  speechControls.append(actionButton('Test Kokoro voice','wave','page-secondary',()=>{ player.unlock().catch(()=>{}); void speak('Hello. I’m Orbit, your personal assistant.'); }));
   speechControls.append(element('p','workspace-note',`Kokoro: ${runtime?.setup.kokoro||'not loaded'}. Speech is generated locally. Voice input and selected file text/transcripts go to Groq.`));
   card.append(speechControls);
-  card.append(element('p','workspace-note','Mac tools: open apps, websites and workspace files; volume; Music/Spotify playback. macOS may request Automation permission. General screen clicking is not enabled.'));
+  card.append(element('p','workspace-note','Computer tools: open apps, websites and workspace files; volume; Music/Spotify playback. macOS may request Automation permission; Windows uses its installed-app and media APIs. General screen clicking is not enabled.'));
   if(runtime?.setup.quota)card.append(element('p','workspace-note',`Groq remaining: ${runtime.setup.quota.requests??'—'} requests · ${runtime.setup.quota.tokens??'—'} tokens (provider quota windows).`));
   return card;
 }
