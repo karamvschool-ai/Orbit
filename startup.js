@@ -51,7 +51,6 @@ export function playStartup(app) {
     const path = document.createElementNS(svgNS, 'path');
     path.setAttribute('d', `M${point(440,angle)} C${point(330,angle+.32)} ${point(190,angle+.8)} ${point(118,angle+1.25)}`);
     path.setAttribute('pathLength', '1');
-    path.style.setProperty('--trail-delay', `${.75+(i%7)*.12}s`);
     path.style.setProperty('--trail-width', `${i%4===0?1.5:.65}px`);
     field.append(path);
   }
