@@ -3,6 +3,8 @@ $argsData = $env:ORBIT_ARGUMENTS | ConvertFrom-Json
 $action = $env:ORBIT_ACTION
 function Emit($value) { ConvertTo-Json -InputObject $value -Compress -Depth 8 }
 switch ($action) {
+ 'app_control' { . (Join-Path $PSScriptRoot 'windows-ui.ps1'); exit }
+ 'spotify_search' { Start-Process -FilePath ('spotify:search:'+ [Uri]::EscapeDataString($argsData.query)); Emit @{searchOpened=$argsData.query;verify='Inspect Spotify and use its Play control for the matching result.'}; exit }
  'list_apps' { Emit @(Get-StartApps | Select-Object Name, AppID); exit }
  'open_app' { Start-Process explorer.exe -ArgumentList ('shell:AppsFolder\' + $argsData.id); Emit @{opened=$argsData.id}; exit }
  'open_url' { Start-Process -FilePath $argsData.url; Emit @{opened=$argsData.url}; exit }
@@ -60,6 +62,7 @@ if ($action -eq 'media_control') {
  $pattern=if($argsData.app -eq 'Spotify'){'Spotify'}else{'ZuneMusic|AppleMusic|MediaPlayer'}
  $session=$manager.GetSessions() | Where-Object {$_.SourceAppUserModelId -match $pattern} | Select-Object -First 1
  if(!$session){throw ($argsData.app+' has no active media session. Start playback in that app first.')}
+ if($argsData.action -eq 'status'){$properties=Await ($session.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties]);Emit @{app=$argsData.app;state=$session.GetPlaybackInfo().PlaybackStatus.ToString();track=$properties.Title;artist=$properties.Artist};exit}
  $operation=switch($argsData.action){'play'{$session.TryPlayAsync()};'pause'{$session.TryPauseAsync()};'next'{$session.TrySkipNextAsync()};'previous'{$session.TrySkipPreviousAsync()}}
  $result=Await $operation ([bool]);if(!$result){throw 'The media player rejected that action.'}; Emit @{app=$argsData.app;action=$argsData.action}
 }
