@@ -51,7 +51,7 @@ export function playStartup(app) {
     circle.style.opacity = String(ease(time, .2, .08) * (1 - ease(time, 2.15, 1.15)));
     const trailOpacity = ease(time, .2, .12) * (1 - ease(time, 1.55, .3));
     for (const trail of trails) {
-      trail.style.strokeDashoffset = String(1 - trace * 1.1);
+      trail.style.strokeDashoffset = String(.1 - trace * 1.2);
       trail.style.opacity = String(trailOpacity * .7);
     }
     video.style.opacity = String(formation * (1 - handoff));
