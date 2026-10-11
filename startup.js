@@ -38,6 +38,9 @@ export function playStartup(app) {
   const onKey = event => { if (event.key === 'Escape') finish(); };
   const onPreference = () => { if (reduced.matches) finish(); };
   if (reduced.matches) { finish(); return; }
+  const wordmark = app.querySelector(".orbit-wordmark").cloneNode(true);
+  wordmark.classList.add("startup-wordmark");
+  overlay.append(wordmark);
   app.inert = true;
   resize();
   window.addEventListener('resize', resize, { passive: true });
