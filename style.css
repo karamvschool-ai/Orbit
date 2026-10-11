@@ -503,8 +503,8 @@ kbd { font: inherit; background: #eaeaec; border-radius: 4px; padding: 3px 6px; 
 }
 
 /* Trace → infalling light → disk ignition → title → expanding aperture. */
-@property --intro-aperture { syntax: '<length>'; inherits: false; initial-value: 0px; }
-#startup { overflow: hidden; pointer-events: none; --intro-aperture: 0px; -webkit-mask-image: radial-gradient(circle at var(--intro-x,49.5vw) var(--intro-y,46vh), transparent var(--intro-aperture), #000 calc(var(--intro-aperture) + 2px)); mask-image: radial-gradient(circle at var(--intro-x,49.5vw) var(--intro-y,46vh), transparent var(--intro-aperture), #000 calc(var(--intro-aperture) + 2px)); animation: startup-exit 1.2s 5.5s cubic-bezier(.6,0,.2,1) both; }
+@property --intro-aperture { syntax: '<length>'; inherits: false; initial-value: -4px; }
+#startup { overflow: hidden; pointer-events: none; --intro-aperture: -4px; -webkit-mask-image: radial-gradient(circle at var(--intro-x,49.5vw) var(--intro-y,46vh), transparent var(--intro-aperture), #000 calc(var(--intro-aperture) + 2px)); mask-image: radial-gradient(circle at var(--intro-x,49.5vw) var(--intro-y,46vh), transparent var(--intro-aperture), #000 calc(var(--intro-aperture) + 2px)); animation: startup-exit 1.2s 5.5s cubic-bezier(.6,0,.2,1) both; }
 .startup-position { position: absolute; left: var(--intro-x,49.5vw); top: var(--intro-y,46vh); width: 0; height: 0; }
 .startup-trace { position: absolute; width: calc(var(--intro-radius,112px) * 2.142857); height: calc(var(--intro-radius,112px) * 2.142857); transform: translate(-50%,-50%) rotate(-90deg); overflow: visible; }
 .startup-trace circle { fill: none; stroke: #fff; stroke-width: 1.25; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; filter: drop-shadow(0 0 3px #fff); animation: startup-trace 1.7s .3s cubic-bezier(.4,0,.25,1) both, startup-ring-fade .8s 2.8s both; }
@@ -526,6 +526,6 @@ html.is-starting .orbit-app { animation: startup-page .01s 5.45s both; }
 @keyframes startup-letter { to { clip-path: inset(0); opacity: 1; } }
 @keyframes startup-infall { 0% { opacity: 0; stroke-dashoffset: 1; } 18% { opacity: .7; } 85% { opacity: .9; } 100% { opacity: 0; stroke-dashoffset: -.1; } }
 @keyframes startup-shock { 0% { opacity: 0; transform: scale(1); } 12% { opacity: .7; } 100% { opacity: 0; transform: scale(3.5); stroke-width: .3; } }
-@keyframes startup-exit { 0% { --intro-aperture: 0px; } 99% { opacity: 1; } 100% { --intro-aperture: 150vmax; opacity: 0; visibility: hidden; } }
+@keyframes startup-exit { 0% { --intro-aperture: -4px; } 99% { opacity: 1; } 100% { --intro-aperture: 150vmax; opacity: 0; visibility: hidden; } }
 @keyframes startup-page { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { #startup { display: none; } html.is-starting .orbit-app { opacity: 1; animation: none; } }
