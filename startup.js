@@ -13,6 +13,9 @@ export function playStartup(app) {
   let finished = false, frame = 0, decodedFrame, mediaStart, timer, loadTimer;
   let mediaSpan = 6.3, elapsed = 0;
   const trails = [];
+  const heads = [];
+  const echoes = [];
+  let flare;
   let layout;
   let wordmark;
   const finish = () => {
@@ -56,8 +59,29 @@ export function playStartup(app) {
       trail.style.strokeDashoffset = String(.1 - trace * 1.2);
       trail.style.opacity = String(trailOpacity * .7);
     }
+    // Rim echoes carry the same arrival energy into the disk's lensing pulse.
+    const ignition = ease(time, 1.6, .55) * (1 - ease(time, 2.75, .8));
+    for (let i=0; i<echoes.length; i++) {
+      const ring=echoes[i];
+      ring.style.strokeDashoffset=String(1-trace);
+      ring.style.opacity=String((arrival*.38+ignition*.5)*(1-i*.19));
+      ring.style.transform=`rotate(${i*19}deg) scale(${1+ignition*(.055+i*.025)})`;
+    }
+    flare.style.opacity=String(ignition*.75);
+    flare.style.transform=`rotate(${ignition*4}deg)`;
+    const headProgress=Math.min(1,trace*1.2), u=1-headProgress;
+    for (const head of heads) {
+      const p=head.points, t=headProgress;
+      head.node.setAttribute('cx',u*u*u*p[0]+3*u*u*t*p[2]+3*u*t*t*p[4]+t*t*t*p[6]);
+      head.node.setAttribute('cy',u*u*u*p[1]+3*u*u*t*p[3]+3*u*t*t*p[5]+t*t*t*p[7]);
+      head.node.style.opacity=String(trailOpacity*(.4+trace*.6));
+    }
     video.style.opacity = String(formation * (1 - handoff));
-    wordmark.style.opacity = String(ease(time, 3.55, .9));
+    wordmark.style.opacity = String(ease(time, 3.55, .6));
+    for (const [i,letter] of [...wordmark.children].entries()) {
+      const reveal=ease(time,3.55+i*.055,.7);
+      letter.style.clipPath=`inset(${(1-reveal)*50}% 0 ${(1-reveal)*50}% 0)`;
+    }
     const farthest = Math.hypot(Math.max(layout.x, innerWidth-layout.x), Math.max(layout.y, innerHeight-layout.y));
     const radius = handoff * (farthest + 150);
     const feather = handoff * 110;
@@ -89,6 +113,8 @@ export function playStartup(app) {
   wordmark.classList.add('startup-wordmark');
   overlay.append(wordmark);
   const ns = 'http://www.w3.org/2000/svg';
+  flare=document.createElement('div'); flare.classList.add('startup-lensing-flare');
+  overlay.querySelector('.startup-position').append(flare);
   const field = document.createElementNS(ns, 'svg');
   field.setAttribute('viewBox', '-520 -320 1040 640');
   field.classList.add('startup-currents');
@@ -126,7 +152,20 @@ export function playStartup(app) {
     trail.setAttribute('pathLength', '1');
     trail.style.strokeWidth = i%4===0 ? '1.4px' : '.7px';
     currents.append(trail); trails.push(trail);
+    const head = document.createElementNS(ns,'circle');
+    head.setAttribute('r',i%4===0?'1.65':'.9');head.setAttribute('fill','#fff');head.style.opacity='0';
+    currents.append(head);
+    heads.push({node:head,points:[Math.cos(angle)*440,Math.sin(angle)*440*.78,Math.cos(angle+.18)*320,Math.sin(angle+.18)*320*.88,controlX,controlY,endX,endY]});
   }
+  const rim=document.createElementNS(ns,'g');rim.classList.add('startup-rim-echoes');
+  for(let i=0;i<3;i++) {
+    const echo=document.createElementNS(ns,'circle');
+    echo.setAttribute('r',String(115+i*4));echo.setAttribute('pathLength','1');
+    echo.setAttribute('fill','none');echo.setAttribute('stroke','#fff');echo.setAttribute('stroke-width',i===0?'1.15':'.5');
+    echo.setAttribute('stroke-dasharray','1 1');echo.setAttribute('stroke-dashoffset','1');echo.style.opacity='0';
+    rim.append(echo);echoes.push(echo);
+  }
+  field.append(rim);
   overlay.querySelector('.startup-position').append(field);
   app.inert = true;
   resize();
