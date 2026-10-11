@@ -5,6 +5,16 @@ const ease = (time, start, duration) => {
   return t * t * t * (t * (t * 6 - 15) + 10);
 };
 
+// Projected disk orbits bend into the upper and lower lensed arcs near the core.
+const accretionPoint = (angle, index) => {
+  const x = Math.cos(angle) * (365 + index * 3.1);
+  const side = Math.sin(angle);
+  const lens = index < 18 ? Math.exp(-Math.pow(x / 164, 2)) *
+    (side < 0 ? 156 : 122) * Math.pow(Math.abs(side), .7) : 0;
+  return [x, side * (17 + index * .65) + Math.sign(side) * lens];
+};
+const pointsPath = (points, closed=true) => points.map(([x,y],i)=>`${i?'L':'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ')+(closed?' Z':'');
+
 export function playStartup(app) {
   const overlay = document.querySelector('#startup');
   const video = overlay.querySelector('video');
@@ -15,6 +25,8 @@ export function playStartup(app) {
   const trails = [];
   const heads = [];
   const echoes = [];
+  const filaments = [];
+  let depositPaths = '';
   let flare, backdrop;
   let layout;
   let wordmark;
@@ -48,7 +60,6 @@ export function playStartup(app) {
     elapsed = Math.max(elapsed, video.currentTime - mediaStart);
     const time = elapsed * 6.3 / mediaSpan;
     const trace = ease(time, .2, 1.65);
-    const formation = ease(time, 1.85, 1.25);
     const handoff = ease(time, 4.55, 1.75);
     const coreMerge = ease(time, 4.95, 1.35);
     const arrival = ease(time, 1.2, .35) * (1 - ease(time, 1.7, .45));
@@ -77,15 +88,30 @@ export function playStartup(app) {
       head.node.setAttribute('cy',u*u*u*p[1]+3*u*u*t*p[3]+3*u*t*t*p[5]+t*t*t*p[7]);
       head.node.style.opacity=String(trailOpacity*(.4+trace*.6));
     }
-    // Continue the completed trace clockwise through the footage. This is an
-    // angular uncovering at fixed size, not an expanding aperture or dissolve.
-    const sweep = formation * 380;
-    const seam = Math.min(sweep/2,24*(1-ease(time,2.65,.45)));
-    const angularMask = formation <= 0 ? 'linear-gradient(transparent, transparent)' :
-      `conic-gradient(from 0deg at center, transparent 0deg, #000 ${seam}deg, #000 ${Math.max(seam,sweep-32)}deg, transparent ${sweep}deg, transparent 380deg)`;
+    for (const [i,filament] of filaments.entries()) {
+      const settle=ease(time,1.15+i*.012,1.5);
+      const visibility=ease(time,1.08+i*.012,.3)*(1-ease(time,3,.55));
+      const points=filament.target.map(([x,y],j)=>{
+        const t=j/(filament.target.length-1);
+        const angle=t*Math.PI*2+i*.23+(1-settle)*(time*.95+t*1.7);
+        const radius=425-t*190;
+        return [Math.cos(angle)*radius*(1-settle)+x*settle,
+          Math.sin(angle)*radius*.7*(1-settle)+y*settle];
+      });
+      filament.node.setAttribute('d',pointsPath(points,false));
+      filament.node.style.opacity=String(visibility*(i%3===0?.85:.38));
+      filament.node.style.strokeWidth=String(.6+settle*(i%3===0?1.1:.35));
+    }
+    // The converged ribbons expose corresponding parts of the real disk. Their
+    // thickness builds in place; there is no sweep, side opening, or global fade.
+    const deposit=ease(time,2.35,.9);
+    const videoWidth=112*8.667;
+    const videoHeight=videoWidth*(video.videoHeight||9)/(video.videoWidth||16);
+    const materialMask=deposit<=0 ? 'linear-gradient(transparent, transparent)' :
+      `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-videoWidth/2} ${-videoHeight/2} ${videoWidth} ${videoHeight}"><defs><filter id="soft"><feGaussianBlur stdDeviation="3"/></filter></defs><g filter="url(#soft)" fill="none" stroke="white" stroke-linecap="round" stroke-linejoin="round" stroke-width="${deposit*deposit*360}">${depositPaths}</g></svg>`)}")`;
     const revealRadius = 112 * layout.scale * 5.28 * (1-handoff*.78);
     const revealFeather = 112 * layout.scale * .35;
-    const horizonMask = `${angularMask}, radial-gradient(circle at center, #000 ${revealRadius-revealFeather}px, rgba(0,0,0,.5) ${revealRadius}px, transparent ${revealRadius+revealFeather}px)`;
+    const horizonMask = `${materialMask}, radial-gradient(circle at center, #000 ${revealRadius-revealFeather}px, rgba(0,0,0,.5) ${revealRadius}px, transparent ${revealRadius+revealFeather}px)`;
     video.style.maskImage = horizonMask;
     video.style.webkitMaskImage = horizonMask;
     video.style.maskComposite = 'intersect';
@@ -183,6 +209,16 @@ export function playStartup(app) {
     rim.append(echo);echoes.push(echo);
   }
   field.append(rim);
+  const assembly=document.createElementNS(ns,'g');assembly.classList.add('startup-accretion');
+  assembly.setAttribute('mask','url(#startup-rim-exclusion)');
+  for(let i=0;i<24;i++) {
+    const target=Array.from({length:129},(_,j)=>accretionPoint(j/128*Math.PI*2,i));
+    const filament=document.createElementNS(ns,'path');
+    filament.style.strokeDasharray='none';filament.style.opacity='0';
+    assembly.append(filament);filaments.push({node:filament,target});
+    if(i%3===0) depositPaths+=`<path d="${pointsPath(target)}"/>`;
+  }
+  field.append(assembly);
   overlay.querySelector('.startup-position').append(field);
   app.inert = true;
   resize();
