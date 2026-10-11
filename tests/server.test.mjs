@@ -8,7 +8,7 @@ import { once } from 'node:events';
 
 test('local API protects credentials and files, persists uploads and validates scheduling',async t=> {
  const root=await mkdtemp(path.join(os.tmpdir(),'orbit-server-test-'));const port=5174;const base=`http://localhost:${port}`;
- const server=spawn(process.execPath,['scripts/dev-server.mjs'],{env:{...process.env,PORT:String(port),ORBIT_DATA_DIR:root},stdio:['ignore','pipe','pipe']});
+ const server=spawn(process.execPath,['scripts/dev-server.mjs'],{env:{...process.env,PORT:String(port),ORBIT_DATA_DIR:root,ORBIT_DISABLE_SPEECH_WARMUP:'1'},stdio:['ignore','pipe','pipe']});
  t.after(async()=>{if(server.exitCode===null){server.kill();await once(server,'exit');}await rm(root,{recursive:true,force:true});});
  await new Promise((resolve,reject)=>{server.stdout.once('data',resolve);server.once('error',reject);server.once('exit',code=>reject(Error(`Server exited ${code}`)));});
  const post=async(url,body)=>fetch(base+url,{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify(body)});

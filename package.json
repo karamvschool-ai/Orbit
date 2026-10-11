@@ -1,14 +1,17 @@
 {
   "name": "orbit",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Orbit — a local personal assistant with Groq and Kokoro.",
+  "description": "Orbit \u2014 a local personal assistant with Groq and Kokoro.",
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
     "build": "node scripts/build.mjs",
     "preview": "node scripts/dev-server.mjs --dist",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "desktop": "node scripts/build.mjs && electron .",
+    "package:mac": "node scripts/build.mjs && electron-builder --mac dmg --arm64 --publish never",
+    "package:win": "node scripts/build.mjs && electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
@@ -17,5 +20,54 @@
     "mammoth": "^1.13.0",
     "marked": "^18.1.0",
     "pdf-parse": "^2.4.5"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  },
+  "main": "desktop/main.cjs",
+  "build": {
+    "appId": "com.orbit.personalassistant",
+    "productName": "Orbit",
+    "directories": {
+      "output": "releases"
+    },
+    "asar": false,
+    "npmRebuild": false,
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "server/**/*",
+      "scripts/dev-server.mjs",
+      "package.json",
+      "!**/.orbit-data/**",
+      "!**/.env*",
+      "!**/tests/**"
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "icon": "desktop/icon.png",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Orbit records your voice only when you press the microphone button.",
+        "NSAppleEventsUsageDescription": "Orbit controls music playback and computer actions that you request."
+      }
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "desktop/icon.png",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "artifactName": "Orbit-Setup-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "artifactName": "Orbit-${version}-mac-${arch}.${ext}"
+    }
   }
 }

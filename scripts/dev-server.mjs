@@ -1,3 +1,4 @@
+import { computerAction } from '../server/platform.mjs';
 import http from 'node:http';
 import { readFile, stat, mkdir, writeFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
@@ -10,17 +11,17 @@ import { executeTool, runDueTasks } from '../server/tools.mjs';
 import { speech, speechStatus, loadSpeech } from '../server/speech.mjs';
 const exec=promisify(execFile);
 const project=path.resolve('.');
-const root=path.resolve(process.argv.includes('--dist')?'dist':'.');
+const root=path.resolve(process.env.ORBIT_APP_ROOT||(process.argv.includes('--dist')?'dist':'.'));
 const port=Number(process.env.PORT||5173);
 const store=new Store(path.resolve(process.env.ORBIT_DATA_DIR||'.orbit-data'));await store.init();
 await mkdir(path.join(store.root,'uploads'),{recursive:true,mode:0o700});
 const groq=new GroqClient(store);const subscribers=new Set();let chatBusy=false;
 const filePublic=({text,diskName,...f})=>({...f,characters:text?.length||0});
-const publicState=()=>({...store.data,files:store.data.files.map(filePublic),setup:{hasKey:!!store.config.groqKey,speech:store.config.speech,voice:store.config.voice,model:MODEL,kokoro:speechStatus(),quota:groq.quota,blockedUntil:groq.blockedUntil},busy:chatBusy});
+const publicState=()=>({...store.data,files:store.data.files.map(filePublic),setup:{hasKey:!!store.config.groqKey,speech:store.config.speech,voice:store.config.voice,model:MODEL,platform:process.platform,kokoro:speechStatus(),quota:groq.quota,blockedUntil:groq.blockedUntil},busy:chatBusy});
 const broadcast=(event={type:'state'})=>{for(const res of subscribers) res.write(`data: ${JSON.stringify(event)}\n\n`);};
 const saveState=async()=>{await store.save();broadcast();};
 const types={'.html':'text/html','.css':'text/css','.js':'text/javascript','.mjs':'text/javascript','.svg':'image/svg+xml','.png':'image/png','.webm':'video/webm','.mp4':'video/mp4','.jpg':'image/jpeg'};
-const allowed=new Set(['index.html','style.css','app.js','startup.js','singularity.js','core-field.js','fluid-simulation.js','scene-layout.js','favicon.svg','runtime.js']);
+const allowed=new Set(['index.html','style.css','app.js','speech-playback.js','startup.js','singularity.js','core-field.js','fluid-simulation.js','scene-layout.js','favicon.svg','runtime.js']);
 async function readBody(req,max=26*1024*1024) {
  let length=0;const chunks=[];
  for await(const chunk of req) {length+=chunk.length;if(length>max) throw Error('File or request too large (25 MB maximum).');chunks.push(chunk);}
@@ -97,16 +98,17 @@ const server=http.createServer(async(req,res)=> {
   if(origin&&!new Set([`http://localhost:${port}`,`http://127.0.0.1:${port}`]).has(origin))return json(res,{error:'Local access only'},403);
   if(!['GET','HEAD'].includes(req.method)&&!origin)return json(res,{error:'Origin required'},403);
   res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','no-referrer');
+  if(process.env.ORBIT_DESKTOP_TOKEN && req.headers['x-orbit-token']!==process.env.ORBIT_DESKTOP_TOKEN && !(req.headers.cookie||'').split(';').some(c=>c.trim()==='orbit_session='+process.env.ORBIT_DESKTOP_TOKEN))return json(res,{error:'Desktop session required'},403);
   const url=new URL(req.url,`http://localhost:${port}`);
   if(url.pathname.startsWith('/api/'))return await routes(req,res,url);
   let rel=decodeURIComponent(url.pathname).replace(/^\//,'')||'index.html';
   if(!allowed.has(rel)&&!['vendor/marked.js','vendor/purify.js'].includes(rel)&&!/^assets\/[\w.-]+$/.test(rel))return json(res,{error:'Not found'},404);
   const vendor={ 'vendor/marked.js':'node_modules/marked/lib/marked.esm.js', 'vendor/purify.js':'node_modules/dompurify/dist/purify.es.mjs' };
-  const file=path.resolve(root,process.argv.includes('--dist')?rel:(vendor[rel]||rel));const body=await readFile(file);res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(body);
+  const file=path.resolve(root,(process.argv.includes('--dist')||process.env.ORBIT_APP_ROOT)?rel:(vendor[rel]||rel));const body=await readFile(file);res.writeHead(200,{'Content-Type':types[path.extname(file)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(body);
  }catch(error){if(!res.headersSent)json(res,{error:error.message},400);else res.end();}
 });
 let ticking=false;
-const scheduler=setInterval(async()=>{if(ticking)return;ticking=true;try{await runDueTasks(store,{notify:async task=>broadcast(task?{type:'reminder',task}:undefined),remind:async task=>{await exec('/usr/bin/osascript',['-e','on run argv','-e','display notification (item 1 of argv) with title "Orbit"','-e','end run',task.title],{timeout:10000});}});}catch{console.error('Scheduler failed to persist task state.');}finally{ticking=false;}},1000);
+const scheduler=setInterval(async()=>{if(ticking)return;ticking=true;try{await runDueTasks(store,{notify:async task=>broadcast(task?{type:'reminder',task}:undefined),remind:async task=>{if(process.parentPort)process.parentPort.postMessage({type:'notification',title:task.title});else await computerAction('notify',{title:task.title});}});}catch{console.error('Scheduler failed to persist task state.');}finally{ticking=false;}},1000);
 scheduler.unref();
 const heartbeat=setInterval(()=>{for(const res of subscribers)res.write(': heartbeat\n\n');},15000);heartbeat.unref();
-server.listen(port,'127.0.0.1',()=>console.log(`Orbit is ready at http://localhost:${port} · local assistant enabled`));
+server.listen(port,'127.0.0.1',()=>{console.log(`Orbit is ready at http://localhost:${port} · local assistant enabled`);process.parentPort?.postMessage({type:'ready',port});if(store.config.speech&&process.env.ORBIT_DISABLE_SPEECH_WARMUP!=='1')loadSpeech(store.root).catch(()=>{});});

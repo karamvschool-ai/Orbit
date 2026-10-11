@@ -21,7 +21,7 @@ export function createCoreField({radius=112}={}) {
     const fragment=`precision mediump float;
       varying vec2 v_uv;
       uniform vec2 u_pointer,u_direction;
-      uniform float u_radius,u_bounds,u_opening,u_stretch,u_time,u_energy,u_listening,u_thinking,u_complete;
+      uniform float u_radius,u_bounds,u_opening,u_stretch,u_time,u_energy,u_listening,u_thinking,u_complete,u_progress;
       vec3 transported(vec2 world) {
         if(u_opening<.001)return vec3(world,1000.);
         vec2 d=world-u_pointer;
@@ -51,6 +51,9 @@ export function createCoreField({radius=112}={}) {
         float outerSdf=length(material.xy)-u_radius;
         float sdf=max(outerSdf,-material.z);
         float black=1.-smoothstep(-.46,.46,sdf);
+        float fillLine=u_radius*(1.-2.*clamp(u_progress,0.,1.));
+        float fill=smoothstep(fillLine-1.2,fillLine+1.2,material.y);
+        black*=mix(1.,fill,clamp(u_thinking,0.,1.));
         float r=length(world),angle=atan(world.y,world.x);
         // A stable bright side belongs to the light flow, never to the black body.
         float bright=pow(.5+.5*cos(angle+2.35),4.5);
@@ -122,7 +125,7 @@ export function createCoreField({radius=112}={}) {
       const position=gl.getAttribLocation(resources.program,'a_position');
       gl.enableVertexAttribArray(position);gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
       const uniform=name=>gl.getUniformLocation(resources.program,name);
-      const uniforms=Object.fromEntries(['pointer','direction','radius','bounds','opening','stretch','time','energy','listening','thinking','complete'].map(name=>[name,uniform(`u_${name}`)]));
+      const uniforms=Object.fromEntries(['pointer','direction','radius','bounds','opening','stretch','time','energy','listening','thinking','complete','progress'].map(name=>[name,uniform(`u_${name}`)]));
       gl.uniform1f(uniforms.radius,radius);gl.uniform1f(uniforms.bounds,BOUNDS);gl.viewport(0,0,SIZE,SIZE);
       let disposed=false;
       return {
@@ -135,6 +138,7 @@ export function createCoreField({radius=112}={}) {
           gl.uniform1f(uniforms.opening,state.opening);gl.uniform1f(uniforms.stretch,state.stretch);
           gl.uniform1f(uniforms.time,state.time);gl.uniform1f(uniforms.energy,energy);
           gl.uniform1f(uniforms.listening,visual.listening||0);gl.uniform1f(uniforms.thinking,visual.thinking||0);
+          gl.uniform1f(uniforms.progress,Number.isFinite(visual.progress)?visual.progress:1);
           gl.uniform1f(uniforms.complete,Number.isFinite(visual.completeProgress)?visual.completeProgress:-1);
           gl.drawArrays(gl.TRIANGLES,0,6);return canvas;
         },
@@ -169,7 +173,8 @@ export function createCoreField({radius=112}={}) {
       if(disposed)return fallback;
       fluid.step(pointer,strength,delta,time);const state=fluid.getState();
       const values=fluid.density;
-      for(let i=0;i<values.length;i++)image.data[i*4+3]=Math.round(values[i]*255);
+      const fillLine=radius*(1-2*(visual.progress??1)),thinkingMix=visual.thinking||0;
+      for(let i=0;i<values.length;i++){const y=(Math.floor(i/fluid.resolution)/fluid.resolution-.5)*BOUNDS*2;const fill=Math.max(0,Math.min(1,(y-fillLine+1.2)/2.4));image.data[i*4+3]=Math.round(values[i]*255*(1-thinkingMix+thinkingMix*fill));}
       gridCtx.putImageData(image,0,0);
       ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,SIZE,SIZE);
       ctx.setTransform(2,0,0,2,BOUNDS*2,BOUNDS*2);

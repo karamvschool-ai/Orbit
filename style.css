@@ -561,3 +561,9 @@ kbd { font: inherit; background: #eaeaec; border-radius: 4px; padding: 3px 6px; 
 .speech-settings { min-width:0; padding-top:16px; }
 .speech-settings .setting-row { padding-top:0; }
 @media(max-width:700px) { .side-panel.is-expanded .assistant-settings { display:block; } }
+.voice-meter { display:none; align-items:center; justify-content:center; gap:3px; height:30px; width:28px; }
+.voice-meter span { width:2px; background:#141417; border-radius:2px; height:3px; }
+.request-method.is-speaking > svg { display:none; }
+.request-method.is-speaking .voice-meter { display:flex; }
+.orbit-app[data-state='thinking'] .status-ring { animation:none; border-color:#b7b7bd; background:conic-gradient(#131316 var(--task-progress,0deg),transparent 0); }
+.orbit-app[data-state='speaking'] .response-avatar { transform:scale(calc(1 + var(--speech-level,0)*.2)); }
