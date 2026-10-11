@@ -509,6 +509,7 @@ kbd { font: inherit; background: #eaeaec; border-radius: 4px; padding: 3px 6px; 
 .startup-trace circle { fill: none; stroke: #fff; stroke-width: 1.25; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; filter: drop-shadow(0 0 3px #fff); animation: startup-trace 2.2s .45s cubic-bezier(.4,0,.25,1) both, startup-ring-fade 1.8s 3.5s both; }
 .startup-hole { position: absolute; width: calc(var(--intro-radius,112px) * 8.667); height: auto; max-width: none; transform: translate(-50%,-50%); filter: grayscale(1) brightness(2.1) contrast(1.15); opacity: 0; visibility: hidden; animation: startup-form 4.2s 2.35s cubic-bezier(.42,0,.35,1) both; }
 .startup-hole.is-ready { visibility: visible; }
+.startup-wordmark { color: #fff; text-shadow: 0 0 2px #000, 0 0 7px #000; opacity: 0; animation: startup-form 1.2s 6s ease-in-out both; }
 html.is-starting .orbit-app { animation: startup-page 1.5s 7.6s ease both; }
 @keyframes startup-trace { 0% { opacity: 0; stroke-dashoffset: 1; } 1% { opacity: 1; } 100% { opacity: 1; stroke-dashoffset: 0; } }
 @keyframes startup-ring-fade { to { opacity: 0; } }
