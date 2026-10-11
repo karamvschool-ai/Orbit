@@ -228,7 +228,7 @@ async function setVoice(active, { cancel = false } = {}) {
         $('#mic-button').disabled = false; $('#composer .send-button').disabled = false;
         await sendPrompt(text, 'voice');
       } catch (error) { setAssistantState('idle'); $('#request-status').textContent = 'Voice input failed.'; toast(error.message); }
-      finally { $('#mic-button').disabled = false; $('#composer .send-button').disabled = requesting; }
+      finally { $('#mic-button').disabled = false; $('#composer .send-button').disabled = false; }
     };
     recorder.start(); voicePreview = true; energy = .55; setAssistantState('listening');
     $('#mic-button').setAttribute('aria-pressed', 'true'); $('#mic-button').setAttribute('aria-label', 'Stop recording and send');
@@ -243,7 +243,7 @@ async function sendPrompt(text, method = 'text') {
   if (requesting) { toast('Orbit is already handling a request.'); return; }
   if (!runtime?.setup.hasKey) { openPanel('settings'); toast('Add your Groq Free-plan key first.'); return; }
   stopSpeech(); closePopovers(); requesting = true;
-  $('#composer .send-button').disabled = true;
+  $('#composer .send-button').disabled = false;$('#composer .send-button').setAttribute('aria-label','Stop request');$('#composer .send-button use').setAttribute('href','#i-stop');
   taskProgress=0;setProgress(.08);
   setAssistantState('thinking'); scene.cue?.('submit'); energy = .8;
   animateSurface($('.request-island'), 'is-arriving'); animateSurface($('#composer'), 'is-sending');
@@ -272,7 +272,7 @@ async function sendPrompt(text, method = 'text') {
     if (!answer && !failed) throw Error('The response connection ended before completion. Check Tasks before retrying.');
   } catch (error) { failed = true; $('#current-response').textContent = error.message; toast(error.message); }
   finally {
-    setProgress(1); requesting = false; $('#composer .send-button').disabled = false; energy = 0;
+    setProgress(1); requesting = false; $('#composer .send-button').disabled = false;$('#composer .send-button').setAttribute('aria-label','Send message');$('#composer .send-button use').setAttribute('href','#i-send'); energy = 0;
     $('.response-island').classList.remove('is-thinking'); $('#status-ring').classList.add('ready');
     $('#request-status').textContent = failed ? 'Request failed.' : 'Your request is complete.';
     setAssistantState(failed ? 'idle' : 'complete');
@@ -284,6 +284,7 @@ async function sendPrompt(text, method = 'text') {
 
 $('#composer').addEventListener('submit', (event) => {
   event.preventDefault();
+  if(requesting){void post('/api/chat/cancel',{}).then(()=>{$('#request-status').textContent='Stopping the current request…';}).catch(error=>toast(error.message));return;}
   player.unlock().catch(()=>{});
   const text = $('#message-input').value.trim();
   if (!text) {
@@ -905,7 +906,16 @@ function renderAssistantSettings() {
   speechControls.append(actionButton('Test Kokoro voice','wave','page-secondary',()=>{ player.unlock().catch(()=>{}); void speak('Hello. I’m Orbit, your personal assistant.'); }));
   speechControls.append(element('p','workspace-note',`Kokoro: ${runtime?.setup.kokoro||'not loaded'}. Speech is generated locally. Voice input and selected file text/transcripts go to Groq.`));
   card.append(speechControls);
-  card.append(element('p','workspace-note','Computer tools: open apps, websites and workspace files; volume; Music/Spotify playback. macOS may request Automation permission; Windows uses its installed-app and media APIs. General screen clicking is not enabled.'));
+  const appControls=element('section','app-control-settings');
+  appControls.append(element('h3','','App control'),element('p','workspace-note','Read app controls, click buttons, enter text and use keyboard shortcuts. Visible app text is sent to Groq to carry out your request; password fields are excluded. Enable only when you want Orbit to interact with your apps.'));
+  const controlLabel=element('label','setting-row');controlLabel.append(element('span','','Allow app interaction'));
+  const controlToggle=element('input');controlToggle.type='checkbox';controlToggle.checked=!!runtime?.setup.appControl;controlToggle.setAttribute('aria-label','Allow app interaction');
+  const accessMessage=element('p','workspace-note',runtime?.setup.platform==='win32'?'Uses Windows UI Automation. Protected/elevated apps may be unavailable.':'Enable Orbit in macOS System Settings → Privacy & Security → Accessibility.');accessMessage.setAttribute('role','status');
+  controlToggle.addEventListener('change',async()=>{try{await post('/api/settings',{appControl:controlToggle.checked});await refreshRuntime();const status=await(await api('/api/app-control/status')).json();accessMessage.textContent=controlToggle.checked?(status.available?'App control is ready. Ask Orbit to use an app.':'App control is enabled, but macOS Accessibility permission is still needed for Orbit.'):'App control disabled.';}catch(error){accessMessage.textContent=error.message;}});
+  controlLabel.append(controlToggle);appControls.append(controlLabel,actionButton('Check app access',null,'page-secondary',async()=>{try{const status=await(await api('/api/app-control/status')).json();accessMessage.textContent=status.available?'System app access is available. Enable Allow app interaction to use it.':status.permission+' permission is needed. Enable Orbit in System Settings, then check again.';}catch(error){accessMessage.textContent=error.message;}}),accessMessage);
+  if(runtime?.setup.platform==='darwin'){appControls.append(element('p','workspace-note','Local test: create an unsaved blank TextEdit document, type a test sentence and read it back. No Groq usage or data transfer.'),actionButton('Test TextEdit control',null,'page-secondary',async()=>{accessMessage.textContent='Testing locally…';try{const result=await post('/api/app-control/test',{});accessMessage.textContent=result.message;}catch(error){accessMessage.textContent=error.message;}}));}
+  card.append(appControls);
+  card.append(element('p','workspace-note','Computer tools: open apps, websites and workspace files; volume; Music/Spotify playback. macOS may request Automation permission; Windows uses its installed-app and media APIs. App interaction uses observed Accessibility/UI Automation controls; pixel-only interfaces are unavailable.'));
   if(runtime?.setup.quota)card.append(element('p','workspace-note',`Groq remaining: ${runtime.setup.quota.requests??'—'} requests · ${runtime.setup.quota.tokens??'—'} tokens (provider quota windows).`));
   return card;
 }
