@@ -1,16 +1,17 @@
+import { marked } from '/vendor/marked.js';
+import DOMPurify from '/vendor/purify.js';
 import { createSingularity } from './singularity.js';
 import { playStartup } from './startup.js';
 
 const $ = (selector) => document.querySelector(selector);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-const settings = { motion: true, interaction: true };
+const settings = { motion: true, interaction: true, speech: true };
 const app = $('.orbit-app');
 const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
 let energy = 0;
 let voicePreview = false;
 let assistantState = 'idle';
 let settleTimer;
-let processingTimer = null;
 let toastTimer;
 let attachedFiles = [];
 let activePopover = null;
@@ -24,11 +25,12 @@ const overlays = [];
 const mobileQuery = matchMedia('(max-width: 900px)');
 const compactInputQuery = matchMedia('(max-width: 550px)');
 let tasksOpen = !mobileQuery.matches;
-const conversations = [
-  { title: 'Research notes', time: 'Today', prompt: 'Make me a summary of my research notes.' },
-  { title: 'Weekly planning', time: 'Yesterday', prompt: 'Help me plan a thoughtful week.' },
-  { title: 'Project ideas', time: 'Yesterday', prompt: 'Help me explore ideas for my next project.' },
-];
+const conversations = [];
+let savedFiles = [];
+let runtime = null;
+let currentChatId = null;
+let requesting = false;
+let recorder, microphone, recordingTimer, recordingChunks = [], speakingAudio, speechGeneration = 0, recordingCancelled = false, microphonePending = false;
 const scene = createSingularity($('#singularity'), {
   getEnergy: () => energy,
   getMotion: () => settings.motion && !reducedMotion.matches,
@@ -159,96 +161,117 @@ function updateInputPlaceholder() {
 updateInputPlaceholder();
 compactInputQuery.addEventListener('change', updateInputPlaceholder);
 
-function setVoice(active) {
-  voicePreview = active;
-  energy = active ? .55 : 0;
-  setAssistantState(active ? 'listening' : 'idle');
-  $('#mic-button').setAttribute('aria-pressed', String(active));
-  $('#mic-button').setAttribute('aria-label', active ? 'Stop voice preview' : 'Preview voice mode');
-  updateInputPlaceholder();
-  if (active) {
-    if (processingTimer !== null) {
-      clearInterval(processingTimer);
-      processingTimer = null;
-      $('#active-task-description').textContent = 'Preview paused';
-      $('.task-row.running').setAttribute('aria-label', `${$('#active-task-title').textContent}, preview paused at ${$('#task-percent').textContent}`);
-      $('#current-response').textContent = 'Your text preview is paused. Send a message to start again.';
+async function api(url, options = {}) {
+  const response = await fetch(url, options);
+  if (!response.ok) { const data = await response.json().catch(() => ({})); throw Error(data.error || `Request failed (${response.status}).`); }
+  return response;
+}
+const post = async (url, data) => (await api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })).json();
+
+function stopSpeech() {
+  speechGeneration++;
+  if (speakingAudio) { speakingAudio.pause(); speakingAudio = null; }
+  if (assistantState === 'speaking') { energy = 0; setAssistantState('idle'); }
+}
+async function speak(text) {
+  stopSpeech();
+  if (!runtime?.setup.speech) return;
+  const generation = speechGeneration;
+  const chunks = text.replace(/[*#`]/g, '').match(/[\s\S]{1,1400}(?:[.!?]\s|$)|[\s\S]{1,1400}/g) || [];
+  try {
+    for (const chunk of chunks) {
+      if (generation !== speechGeneration) return;
+      $('#request-status').textContent = 'Preparing Kokoro voice…';
+      const response = await api('/api/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: chunk }) });
+      const url = URL.createObjectURL(await response.blob());
+      if (generation !== speechGeneration) { URL.revokeObjectURL(url); return; }
+      const audio = new Audio(url); speakingAudio = audio;
+      energy = .45; setAssistantState('speaking'); $('#request-status').textContent = 'Speaking…';
+      try {
+        await new Promise((resolve, reject) => { audio.onended = resolve; audio.onerror = () => reject(Error('Audio playback failed.')); audio.onpause = resolve; audio.play().catch(reject); });
+      } finally { URL.revokeObjectURL(url); }
     }
-    $('.response-island').classList.remove('is-thinking');
-    $('#status-ring').classList.remove('ready');
-    $('#request-method use').setAttribute('href', '#i-wave');
-    $('#request-status').textContent = 'Listening preview...';
-    toast('Voice preview · no microphone recording');
-  } else {
-    $('#status-ring').classList.add('ready');
-    $('#request-status').textContent = 'Ready when you are.';
-  }
+  } catch (error) { toast(`Voice: ${error.message} Use Read aloud to retry.`); }
+  finally { if (generation === speechGeneration) { speakingAudio = null; energy = 0; setAssistantState('idle'); $('#request-status').textContent = 'Ready when you are.'; } }
+}
+async function setVoice(active, { cancel = false } = {}) {
+  if (!active) { recordingCancelled = cancel; if (recorder?.state === 'recording') recorder.stop(); return; }
+  if (voicePreview || microphonePending) return;
+  if (requesting) { toast('Wait for the current response.'); return; }
+  if (!runtime?.setup.hasKey) { openPanel('settings'); toast('Add your Groq Free-plan key first.'); return; }
+  stopSpeech();
+  try {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) throw Error('Microphone recording is unavailable in this browser.');
+    microphonePending = true; $('#mic-button').disabled = true;
+    microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recordingCancelled = false;
+    const mime = ['audio/webm;codecs=opus', 'audio/mp4'].find(type => MediaRecorder.isTypeSupported(type));
+    recorder = new MediaRecorder(microphone, mime ? { mimeType: mime } : {});
+    recordingChunks = []; recorder.ondataavailable = e => { if (e.data.size) recordingChunks.push(e.data); };
+    recorder.onstop = async () => {
+      clearTimeout(recordingTimer); microphone.getTracks().forEach(track => track.stop());
+      voicePreview = false; energy = 0; $('#mic-button').setAttribute('aria-pressed', 'false'); $('#mic-button').setAttribute('aria-label', 'Record a voice message'); updateInputPlaceholder();
+      if (recordingCancelled) { setAssistantState('idle'); $('#request-status').textContent = 'Recording cancelled.'; return; }
+      $('#mic-button').disabled = true; $('#composer .send-button').disabled = true;
+      setAssistantState('thinking'); $('#request-status').textContent = 'Transcribing your voice…';
+      try {
+        const blob = new Blob(recordingChunks, { type: recorder.mimeType });
+        if (blob.size < 1000) throw Error('Recording was too short. Please try again.');
+        const response = await api('/api/transcribe', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob });
+        const { text } = await response.json();
+        if (!text?.trim()) throw Error('No speech detected.');
+        $('#mic-button').disabled = false; $('#composer .send-button').disabled = false;
+        await sendPrompt(text, 'voice');
+      } catch (error) { setAssistantState('idle'); $('#request-status').textContent = 'Voice input failed.'; toast(error.message); }
+      finally { $('#mic-button').disabled = false; $('#composer .send-button').disabled = requesting; }
+    };
+    recorder.start(); voicePreview = true; energy = .55; setAssistantState('listening');
+    $('#mic-button').setAttribute('aria-pressed', 'true'); $('#mic-button').setAttribute('aria-label', 'Stop recording and send');
+    $('#request-method use').setAttribute('href', '#i-wave'); $('#request-status').textContent = 'Listening · tap the microphone to send'; updateInputPlaceholder();
+    recordingTimer = setTimeout(() => setVoice(false), 90000);
+  } catch (error) { microphone?.getTracks().forEach(track => track.stop()); toast(error.message); }
+  finally { microphonePending = false; $('#mic-button').disabled = false; }
 }
 
-function replyFor(text) {
-  const words = text.toLowerCase();
-  if (words.includes('research') || words.includes('notes') || words.includes('summar')) {
-    return 'I reviewed your notes, organized the key points, and prepared a concise summary for you.';
-  }
-  if (words.includes('plan') || words.includes('week') || words.includes('schedule')) {
-    return 'I mapped out your priorities and made room for focused work, a little curiosity, and time to recharge.';
-  }
-  if (words.includes('idea') || words.includes('project') || words.includes('creat')) {
-    return 'I gathered a few directions to explore. Let’s start with the idea that sparks your curiosity most.';
-  }
-  return 'Your thought is here, in orbit. I’m ready to help you explore it when we bring this space to life.';
-}
-
-function demoPrompt(text, method = 'text') {
-  clearInterval(processingTimer);
-  processingTimer = null;
-  closePopovers();
-  if (voicePreview) setVoice(false);
-  setAssistantState('thinking');
-  scene.cue?.('submit');
-  animateSurface($('.request-island'), 'is-arriving');
-  animateSurface($('#composer'), 'is-sending');
+async function sendPrompt(text, method = 'text') {
+  if (voicePreview) { toast('Stop the microphone before sending a text message.'); return; }
+  if (requesting) { toast('Orbit is already handling a request.'); return; }
+  if (!runtime?.setup.hasKey) { openPanel('settings'); toast('Add your Groq Free-plan key first.'); return; }
+  stopSpeech(); closePopovers(); requesting = true;
+  $('#composer .send-button').disabled = true;
+  setAssistantState('thinking'); scene.cue?.('submit'); energy = .8;
+  animateSurface($('.request-island'), 'is-arriving'); animateSurface($('#composer'), 'is-sending');
   $('#current-request').textContent = text;
-  selectedConversation = text;
   $('#request-method use').setAttribute('href', method === 'voice' ? '#i-wave' : '#i-keyboard');
-  $('#request-status').textContent = 'Working on your request...';
-  $('#status-ring').classList.remove('ready');
-  $('.response-island').classList.add('is-thinking');
-  $('#current-response').textContent = 'Following the thread of your thought...';
-  $('#active-task-title').textContent = /research|notes|summar/i.test(text) ? 'Summarizing research notes' : 'Exploring your request';
-  $('#active-task-description').textContent = 'Gathering the pieces...';
-  $('.task-row.running').classList.remove('is-complete');
-  energy = .8;
-  let progress = 0;
-  const update = () => {
-    $('.task-check.progress').style.setProperty('--progress', `${progress}%`);
-    $('#task-percent').textContent = `${progress}%`;
-    $('.task-row.running').setAttribute('aria-label', `${$('#active-task-title').textContent}, ${progress} percent complete`);
-  };
-  update();
-  processingTimer = setInterval(() => {
-    progress = Math.min(100, progress + 7 + Math.round(Math.random() * 8));
-    update();
-    if (progress >= 45) $('#active-task-description').textContent = 'Connecting the key points...';
-    if (progress === 100) {
-      clearInterval(processingTimer);
-      processingTimer = null;
-      $('#request-status').textContent = 'Your request is complete.';
-      $('#status-ring').classList.add('ready');
-      $('#current-response').textContent = replyFor(text);
-      $('.response-island').classList.remove('is-thinking');
-      $('#active-task-description').textContent = 'Complete';
-      energy = 0;
-      setAssistantState('complete');
-      scene.cue?.('complete');
-      animateSurface($('.response-island'), 'is-revealed');
-      animateSurface($('.task-row.running'), 'just-completed');
-      $('#live-status').textContent = 'Preview complete. ' + $('#current-response').textContent;
+  $('#request-status').textContent = 'Thinking…'; $('#status-ring').classList.remove('ready');
+  $('.response-island').classList.add('is-thinking'); $('#current-response').textContent = 'Thinking…';
+  let answer, failed = false;
+  try {
+    const response = await api('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, method, chatId: currentChatId, attachments: attachedFiles.map(f => f.id) }) });
+    $('#message-input').value = ''; attachedFiles = []; updateAttachmentChip();
+    const reader = response.body.getReader(), decoder = new TextDecoder(); let pending = '';
+    for (;;) {
+      const { done, value } = await reader.read(); pending += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = pending.split('\n'); pending = lines.pop();
+      for (const line of lines) if (line.trim()) {
+        const event = JSON.parse(line);
+        if (event.type === 'chat') currentChatId = event.id;
+        if (event.type === 'status') { $('#request-status').textContent = event.text; $('#current-response').textContent = event.text; setAssistantState('thinking'); }
+        if (event.type === 'answer') { answer = event.text; renderAnswer($('#current-response'), answer); }
+        if (event.type === 'error') { failed = true; $('#current-response').textContent = event.text; toast(event.text); }
+      }
+      if (done) break;
     }
-  }, 240);
-  if (!conversations.some((item) => item.prompt === text)) {
-    conversations.unshift({ title: text.length > 32 ? text.slice(0, 32) + '…' : text, time: 'Just now', prompt: text });
-    conversations.splice(8);
+    if (!answer && !failed) throw Error('The response connection ended before completion. Check Tasks before retrying.');
+  } catch (error) { failed = true; $('#current-response').textContent = error.message; toast(error.message); }
+  finally {
+    requesting = false; $('#composer .send-button').disabled = false; energy = 0;
+    $('.response-island').classList.remove('is-thinking'); $('#status-ring').classList.add('ready');
+    $('#request-status').textContent = failed ? 'Request failed.' : 'Your request is complete.';
+    setAssistantState(failed ? 'idle' : 'complete');
+    if (!failed) { scene.cue?.('complete'); animateSurface($('.response-island'), 'is-revealed'); }
+    await refreshRuntime();
+    if (answer) { $('#live-status').textContent = answer; void speak(answer); }
   }
 }
 
@@ -260,8 +283,8 @@ $('#composer').addEventListener('submit', (event) => {
     toast('Add a thought to send it into orbit.');
     return;
   }
-  demoPrompt(text);
-  $('#message-input').value = '';
+  sendPrompt(text);
+  if (requesting) $('#message-input').value = '';
 });
 $('#mic-button').addEventListener('click', () => setVoice(!voicePreview));
 $('#attach-button').addEventListener('click', () => togglePopover('attach'));
@@ -272,27 +295,21 @@ $('#use-example').addEventListener('click', () => {
   $('#message-input').value = 'Help me plan a thoughtful week.';
   $('#message-input').focus();
 });
-$('#file-input').addEventListener('change', (event) => {
-  const added = Array.from(event.target.files);
-  if (!added.length) return;
-  attachedFiles.push(...added);
-  updateAttachmentChip();
-  $('#file-input').value = '';
-  fileQuery = '';
-  selectedWorkspaceFile = workspaceFiles().at(-1).id;
-  toast(added.length === 1 ? 'File added to your workspace.' : `${added.length} files added to your workspace.`);
-  if (activePage === 'workspace') {
-    openPanel('workspace');
-    ($(`.file-card[data-file="${selectedWorkspaceFile}"]`) || $('#workspace-add-files')).focus({ preventScroll: true });
+$('#file-input').addEventListener('change', async (event) => {
+  const added = Array.from(event.target.files); event.target.value = '';
+  for (const file of added) {
+    try {
+      toast(`Adding ${file.name}…`);
+      const response = await api('/api/files', { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) }, body: file });
+      const saved = await response.json(); attachedFiles.push(saved); selectedWorkspaceFile = saved.id;
+      toast(saved.capability === 'Stored only' || saved.capability === 'Image preview' ? saved.note : `${file.name} · ${saved.capability}`);
+    } catch (error) { toast(error.message); }
   }
+  updateAttachmentChip(); await refreshRuntime();
+  if (activePage === 'workspace') openPanel('workspace');
 });
 $('#remove-attachment').addEventListener('click', () => {
-  attachedFiles = [];
-  $('#file-input').value = '';
-  selectedWorkspaceFile = exampleFiles[0].id;
-  updateAttachmentChip();
-  if (activePage === 'workspace') openPanel('workspace');
-  $('#attach-button').focus({ preventScroll: true });
+  attachedFiles = []; updateAttachmentChip(); $('#attach-button').focus({ preventScroll: true });
 });
 $('#copy-response').addEventListener('click', async () => {
   closePopovers({ restoreFocus: true });
@@ -301,11 +318,8 @@ $('#copy-response').addEventListener('click', async () => {
     toast('Response copied.');
   } catch { toast('Copy is unavailable in this browser.'); }
 });
-$('#replay-response').addEventListener('click', () => {
-  closePopovers({ restoreFocus: true });
-  demoPrompt($('#current-request').textContent, $('#request-method use').getAttribute('href') === '#i-wave' ? 'voice' : 'text');
-});
-
+$('#stop-speech').addEventListener('click', () => { closePopovers(); stopSpeech(); });
+$('#replay-response').addEventListener('click', () => { closePopovers({ restoreFocus: true }); void speak($('#current-response').textContent); });
 function setTasks(open, { restoreFocus = false } = {}) {
   const mobile = mobileQuery.matches;
   const panel = $('#task-panel');
@@ -335,21 +349,6 @@ mobileQuery.addEventListener('change', (event) => {
   setTasks(!event.matches, { restoreFocus: event.matches && panelHadFocus });
   if (!event.matches && toggleHadFocus) $('#close-tasks').focus({ preventScroll: true });
 });
-document.querySelectorAll('.task-row').forEach((row) => {
-  row.addEventListener('click', () => {
-    if (row.classList.contains('running')) {
-      toast(`${$('#active-task-title').textContent} · ${$('#task-percent').textContent} complete`);
-      return;
-    }
-    const complete = row.classList.toggle('is-complete');
-    if (complete) animateSurface(row, 'just-completed');
-    row.setAttribute('aria-pressed', String(complete));
-    const description = row.querySelector('.task-description');
-    if (!description.dataset.original) description.dataset.original = description.textContent;
-    description.textContent = complete ? 'Complete' : description.dataset.original;
-  });
-});
-
 function icon(symbol, className = 'icon') {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('class', className);
@@ -443,32 +442,43 @@ function searchField(label, value, onInput) {
   return field;
 }
 
-function beginMessage(text = '') {
+function beginMessage(text = '', chatId = null) {
+  currentChatId = chatId;
+  if (!chatId) { stopSpeech(); $('#current-request').textContent = 'A new conversation'; $('#current-response').textContent = 'What would you like to explore?'; $('#request-status').textContent = 'Ready when you are.'; }
   openPanel('home');
   $('#message-input').value = text;
   $('#message-input').focus({ preventScroll: true });
 }
 
 function selectedConversationItem() {
-  return conversations.find(item => item.prompt === selectedConversation) || conversations[0];
+  return conversations.find(item => item.id === selectedConversation) || conversations[0];
 }
 
 function renderConversationDetail() {
-  const detail = $('.conversation-detail');
-  if (!detail) return;
-  const item = selectedConversationItem();
-  detail.replaceChildren();
-  const header = element('div', 'detail-header');
-  header.append(element('small', '', `${item.time} · Conversation`), element('h3', '', item.title));
+  const detail = $('.conversation-detail'); if (!detail) return;
+  const item = selectedConversationItem(); detail.replaceChildren();
+  if (!item) { detail.append(element('p', 'page-empty', 'Your conversations will appear here.')); return; }
+  const header = element('div', 'detail-header'); header.append(element('small', '', `${item.time} · Conversation`), element('h3', '', item.title));
   const thread = element('div', 'detail-thread');
-  const request = element('div', 'thread-message is-user');
-  request.append(element('span', 'message-label', 'YOU'), element('p', '', item.prompt));
-  const response = element('div', 'thread-message is-assistant');
-  response.append(element('span', 'message-label', 'ORBIT'), element('p', '', replyFor(item.prompt)));
-  thread.append(request, response);
+  for (const message of item.messages) {
+    const row = element('div', `thread-message ${message.role === 'user' ? 'is-user' : 'is-assistant'}`);
+    const content = element('div', 'thread-content');
+    if (message.role === 'assistant') renderAnswer(content, message.content);
+    else content.append(element('p', '', message.content));
+    row.append(element('span', 'message-label', message.role === 'user' ? `YOU · ${message.method || 'text'}` : 'ORBIT'), content);
+    thread.append(row);
+  }
   const footer = element('div', 'detail-footer');
-  footer.append(actionButton('Continue conversation', 'arrow', 'page-secondary', () => beginMessage(item.prompt)));
+  footer.append(actionButton('Continue conversation', 'arrow', 'page-secondary', () => { restoreChat(item); beginMessage('', item.id); }), actionButton('Delete conversation', null, 'file-remove', async () => {
+    try { await api(`/api/chats/${item.id}`, { method: 'DELETE' }); if (currentChatId === item.id) currentChatId = null; selectedConversation = null; await refreshRuntime(); openPanel('conversations'); } catch (error) { toast(error.message); }
+  }));
   detail.append(header, thread, footer);
+}
+function restoreChat(item) {
+  currentChatId = item.id; selectedConversation = item.id;
+  const lastUser = item.messages.findLast(m => m.role === 'user'), lastAnswer = item.messages.findLast(m => m.role === 'assistant');
+  $('#current-request').textContent = lastUser?.content || 'A new conversation'; renderAnswer($('#current-response'), lastAnswer?.content || 'What would you like to explore?');
+  $('#request-method use').setAttribute('href', lastUser?.method === 'voice' ? '#i-wave' : '#i-keyboard'); $('#request-status').textContent = 'Conversation restored.';
 }
 
 function renderConversationCards() {
@@ -484,16 +494,16 @@ function renderConversationCards() {
   matches.forEach(item => {
     const button = element('button', 'conversation-card');
     button.type = 'button';
-    button.dataset.prompt = item.prompt;
-    button.classList.toggle('active', selectedConversationItem().prompt === item.prompt);
-    button.setAttribute('aria-pressed', String(selectedConversationItem().prompt === item.prompt));
+    button.dataset.prompt = item.id;
+    button.classList.toggle('active', selectedConversationItem()?.id === item.id);
+    button.setAttribute('aria-pressed', String(selectedConversationItem()?.id === item.id));
     const mark = element('span', 'conversation-icon');
     mark.append(icon('chat'));
     const copy = element('span', 'conversation-copy');
     copy.append(element('strong', '', item.title), element('p', '', item.prompt), element('small', '', item.time));
     button.append(mark, copy, icon('arrow', 'icon conversation-arrow'));
     button.addEventListener('click', () => {
-      selectedConversation = item.prompt;
+      selectedConversation = item.id;
       list.querySelectorAll('.conversation-card').forEach(card => {
         const selected = card.dataset.prompt === selectedConversation;
         card.classList.toggle('active', selected);
@@ -507,12 +517,14 @@ function renderConversationCards() {
 
 function renderConversations(body) {
   if (!pageExpanded) {
+    body.append(actionButton('New conversation', 'plus', 'panel-action', () => beginMessage()));
+    if (!conversations.length) body.append(element('p', 'panel-caption', 'Your saved conversations will appear here.'));
     conversations.forEach(item => {
       const button = element('button', 'conversation-item');
       const copy = element('span');
       copy.append(element('strong', '', item.title), element('small', '', item.time));
       button.append(icon('chat'), copy);
-      button.addEventListener('click', () => { demoPrompt(item.prompt); openPanel('home', { restoreFocus: true }); });
+      button.addEventListener('click', () => { restoreChat(item); openPanel('home', { restoreFocus: true }); });
       body.append(button);
     });
     return;
@@ -534,24 +546,10 @@ function renderConversations(body) {
   renderConversationDetail();
 }
 
-const exampleFiles = [
-  { id: 'example-research', name: 'Research notes.pdf', type: 'PDF', label: 'Research · Example', title: 'Research notes', content: ['A few threads worth following.', 'The strongest ideas connect a clear question with a small, observable experiment. Start with the problems that appear repeatedly in your notes.', 'Key points', 'Keep the original question visible.', 'Group related observations before drawing conclusions.', 'Turn each promising idea into a simple next step.'] },
-  { id: 'example-project', name: 'Project outline.md', type: 'MD', label: 'Planning · Example', title: 'Project outline', content: ['A quiet, personal assistant.', 'Orbit brings your thoughts, files, and plans into one calm space.', 'Next steps', 'Make the core interactions feel natural.', 'Give conversations and files room to breathe.', 'Keep the interface simple and focused.'] },
-  { id: 'example-reading', name: 'Reading list.txt', type: 'TXT', label: 'Reading · Example', title: 'Reading list', content: ['Something to get curious about.', 'A short collection of topics to return to when there’s room to explore.', 'On the list', 'Human-centered interfaces', 'Creative routines and focused work', 'Patterns in natural motion'] },
-];
-const fileIds = new WeakMap();
-let fileIdSequence = 0;
-let selectedWorkspaceFile = exampleFiles[0].id;
+let selectedWorkspaceFile = null;
 let previewSequence = 0;
-
 function workspaceFiles() {
-  return [...exampleFiles, ...attachedFiles.map(file => {
-    if (!fileIds.has(file)) fileIds.set(file, `local-${++fileIdSequence}`);
-    const extension = file.name.split('.').pop();
-    const type = file.name.includes('.') ? extension.toUpperCase().slice(0, 5) : 'FILE';
-    const size = file.size < 1024 ? `${file.size} B` : file.size < 1048576 ? `${(file.size / 1024).toFixed(1)} KB` : `${(file.size / 1048576).toFixed(1)} MB`;
-    return { id: fileIds.get(file), name: file.name, type, label: `${size} · On this device`, title: file.name, file };
-  })];
+  return savedFiles.map(file => ({ ...file, title: file.name, type: file.name.split('.').pop().toUpperCase().slice(0,5), label: `${(file.size / 1024).toFixed(1)} KB · ${file.capability}` }));
 }
 
 function updateAttachmentChip() {
@@ -560,45 +558,23 @@ function updateAttachmentChip() {
 }
 
 async function renderFilePreview() {
-  const detail = $('.workspace-detail');
-  if (!detail) return;
-  const files = workspaceFiles();
-  const item = files.find(file => file.id === selectedWorkspaceFile) || files[0];
-  selectedWorkspaceFile = item.id;
-  const sequence = ++previewSequence;
-  detail.replaceChildren();
-  const preview = element('div', 'file-preview');
-  preview.append(element('small', '', item.file ? item.label : 'EXAMPLE DOCUMENT'), element('h3', '', item.title));
+  const detail = $('.workspace-detail'); if (!detail) return;
+  const item = workspaceFiles().find(f => f.id === selectedWorkspaceFile) || workspaceFiles()[0];
+  detail.replaceChildren(); if (!item) { detail.append(element('p', 'page-empty', 'Add a file to see it here.')); return; }
+  selectedWorkspaceFile = item.id; const sequence = ++previewSequence;
+  const preview = element('div', 'file-preview'); preview.append(element('small', '', item.label), element('h3', '', item.name), element('p', 'workspace-note', item.note));
   detail.append(preview);
-  if (item.content) {
-    preview.append(element('p', '', item.content[0]), element('p', '', item.content[1]), element('h4', '', item.content[2]));
-    const list = element('ul');
-    item.content.slice(3).forEach(text => list.append(element('li', '', text)));
-    preview.append(list);
-  } else if (item.file.size > 2 * 1048576) {
-    preview.append(element('p', 'workspace-note', 'This file is attached. Text previews are available for files up to 2 MB.'));
-  } else if (/\.(txt|md|csv|json|log)$/i.test(item.name) || item.file.type.startsWith('text/')) {
-    const text = element('pre', 'file-preview-text', 'Opening your file…');
-    preview.append(text);
-    try {
-      const content = await item.file.text();
-      if (sequence !== previewSequence || !text.isConnected) return;
-      text.textContent = content.slice(0, 16000) || 'This file is empty.';
-      if (content.length > 16000) preview.append(element('p', 'workspace-note', 'Showing the first 16,000 characters.'));
-    } catch { text.textContent = 'This file could not be previewed.'; }
-  } else {
-    preview.append(element('p', 'workspace-note', 'Your file is attached and ready to use in a message. A text preview is not available for this file type.'));
+  if (/^image\/(png|jpeg|webp|gif)$/.test(savedFiles.find(f => f.id === item.id)?.type || '')) {
+    const image = element('img', 'workspace-image'); image.src = `/api/files/${item.id}?preview`; image.alt = item.name; preview.append(image);
+  }
+  if (item.characters) {
+    const text = element('pre', 'file-preview-text', 'Opening…'); preview.append(text);
+    try { const data = await (await api(`/api/files/${item.id}/text`)).json(); if (sequence === previewSequence && text.isConnected) text.textContent = data.text.slice(0,16000); }
+    catch (error) { text.textContent = error.message; }
   }
   const footer = element('div', 'detail-footer');
-  footer.append(actionButton('Use in a message', 'arrow', 'page-secondary', () => beginMessage(`Help me review ${item.name}.`)));
-  if (item.file) footer.append(actionButton('Remove file', null, 'file-remove', () => {
-    attachedFiles = attachedFiles.filter(file => file !== item.file);
-    $('#file-input').value = '';
-    updateAttachmentChip();
-    selectedWorkspaceFile = exampleFiles[0].id;
-    renderFileCards();
-    renderFilePreview();
-    ($('.file-card') || $('.page-search input')).focus({ preventScroll: true });
+  footer.append(actionButton('Use in a message', 'arrow', 'page-secondary', () => { if (!attachedFiles.some(f => f.id === item.id)) attachedFiles.push(item); updateAttachmentChip(); beginMessage(`Help me review ${item.name}.`); }), actionButton('Download', 'arrow', 'page-secondary', () => { const a = element('a'); a.href = `/api/files/${item.id}`; a.download = item.name; a.click(); }), actionButton('Remove file', null, 'file-remove', async () => {
+    try { await api(`/api/files/${item.id}`, { method: 'DELETE' }); attachedFiles = attachedFiles.filter(f => f.id !== item.id); updateAttachmentChip(); await refreshRuntime(); renderFileCards(); renderFilePreview(); } catch (error) { toast(error.message); }
   }));
   detail.append(footer);
 }
@@ -642,8 +618,10 @@ function renderWorkspace(body) {
   addFiles.id = 'workspace-add-files';
   if (!pageExpanded) {
     body.append(element('p', 'panel-caption', 'A little space for the things you’re working on.'));
+    if (!workspaceFiles().length) body.append(element('p', 'workspace-note', 'Only files you add will appear here.'));
     workspaceFiles().forEach(file => {
-      const row = element('div', 'workspace-file');
+      const row = element('button', 'workspace-file');
+      row.type = 'button'; row.addEventListener('click', () => { selectedWorkspaceFile = file.id; openPanel('workspace', { expanded: true }); });
       row.append(icon('file'), element('span', '', file.name));
       body.append(row);
     });
@@ -658,7 +636,7 @@ function renderWorkspace(body) {
   layout.append(element('section', 'file-grid'), element('section', 'workspace-detail'));
   layout.firstChild.setAttribute('aria-label', 'Workspace files');
   layout.lastChild.setAttribute('aria-label', 'Selected file preview');
-  body.append(toolbar, layout, element('p', 'workspace-note', 'Files you add stay on this device.'));
+  body.append(toolbar, layout, element('p', 'workspace-note', 'Files are saved on this Mac. Selected text and audio are sent to Groq for interpretation.'));
   renderFileCards();
   renderFilePreview();
 }
@@ -703,6 +681,7 @@ function updateSettingsPreview() {
 }
 
 function renderSettings(body) {
+  body.append(renderAssistantSettings());
   const controls = [
     { key: 'motion', label: 'Ambient motion', description: 'Let the singularity drift' },
     { key: 'interaction', label: 'Cursor gravity', description: 'Bend the space around you' },
@@ -795,7 +774,7 @@ document.addEventListener('keydown', (event) => {
       else openPanel('home', { restoreFocus: true });
     }
     else if (overlay === 'tasks') setTasks(false, { restoreFocus: true });
-    else if (voicePreview) setVoice(false);
+    else if (voicePreview) setVoice(false, { cancel: true });
     else return;
     event.preventDefault();
     return;
@@ -816,7 +795,6 @@ window.addEventListener('pagehide', (event) => {
     return;
   }
   scene.destroy();
-  clearInterval(processingTimer);
   clearTimeout(toastTimer);
   clearTimeout(settleTimer);
   clearSurfaceLight();
@@ -825,4 +803,114 @@ window.addEventListener('pagehide', (event) => {
   window.removeEventListener('blur', clearSurfaceLight);
 });
 
+let runtimeRefresh;
+async function refreshRuntime(initial = false) {
+  if (runtimeRefresh) return runtimeRefresh;
+  runtimeRefresh = (async () => {
+    try {
+      runtime = await (await api('/api/state')).json();
+      settings.speech = runtime.setup.speech;
+      savedFiles = runtime.files;
+      conversations.splice(0, conversations.length, ...runtime.chats.map(chat => ({ ...chat, prompt: chat.messages.find(m => m.role === 'user')?.content || '', time: new Date(chat.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) })));
+      renderTasks();
+      if (activePage === 'conversations') { renderConversationCards(); renderConversationDetail(); }
+      if (initial) {
+        $('#current-request').textContent = 'What would you like to do?';
+        $('#current-response').textContent = runtime.setup.hasKey ? 'I’m ready. Ask a question, open an app, or schedule a reminder.' : 'Connect your Groq Free-plan key in Settings to get started.';
+        $('#request-status').textContent = runtime.setup.hasKey ? 'Ready when you are.' : 'Setup needed · open Settings';
+        $('#status-ring').classList.add('ready');
+        $('#mic-button').setAttribute('aria-label', 'Record a voice message');
+        if (runtime.setup.hasKey && runtime.setup.speech) post('/api/speech/load', {}).catch(error => toast(`Kokoro: ${error.message}`));
+      }
+    } catch (error) {
+      if (initial) { $('#current-request').textContent = 'Orbit needs its local companion.'; $('#current-response').textContent = 'Start the local Orbit server to use AI, files, chats, and computer actions.'; $('#request-status').textContent = error.message; }
+    }
+  })().finally(() => { runtimeRefresh = null; });
+  return runtimeRefresh;
+}
+function renderTasks() {
+  if (!runtime) return;
+  const current = $('#task-panel .task-section:not(.upcoming) .task-list'), upcoming = $('#task-panel .upcoming .task-list');
+  current.replaceChildren(); upcoming.replaceChildren();
+  const scheduled = runtime.tasks.filter(t => t.status === 'scheduled').sort((a,b) => Date.parse(a.dueAt)-Date.parse(b.dueAt));
+  const active = runtime.tasks.filter(t => t.status === 'running').reverse();
+  const recent = runtime.tasks.filter(t => ['complete','failed'].includes(t.status)).slice(-3).reverse();
+  function row(task, container) {
+    const button = element('button', `task-row ${task.status === 'running' ? 'running' : ''} ${task.status === 'complete' ? 'is-complete' : ''}`);
+    button.type = 'button'; const check = element('span', `task-check ${task.status === 'running' ? 'progress live-progress' : ''}`);
+    const copy = element('span', 'task-copy');
+    const when = task.dueAt ? new Date(task.dueAt).toLocaleString('en-US', { timeZone: 'America/New_York', month:'short',day:'numeric',hour:'numeric',minute:'2-digit' }) + ' ET' : task.detail;
+    copy.append(element('span', 'task-title', task.title), element('span', 'task-description', task.status === 'scheduled' ? when : task.detail)); button.append(check, copy);
+    button.title = task.status === 'scheduled' ? 'Click to view task options' : task.detail;
+    button.addEventListener('click', () => {
+      if (task.status !== 'scheduled') { toast(`${task.title} · ${task.detail}`); return; }
+      const existing = button.nextElementSibling;
+      if (existing?.classList.contains('task-actions')) { existing.remove(); return; }
+      const actions = element('div', 'task-actions');
+      for (const [label,status] of [['Complete','complete'],['Cancel','cancelled']]) actions.append(actionButton(label,null,'page-secondary',async()=> {
+        try { await api(`/api/tasks/${task.id}`, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})}); await refreshRuntime(); } catch(error) { toast(error.message); }
+      }));
+      button.after(actions);
+    });
+    container.append(button);
+  }
+  [...active,...recent].forEach(t => row(t,current)); scheduled.forEach(t=>row(t,upcoming));
+  if (!active.length && !recent.length) current.append(element('p','workspace-note','No active tasks.'));
+  if (!scheduled.length) upcoming.append(element('p','workspace-note','Ask Orbit to schedule something.'));
+  if (!$('#clear-finished')) {
+    const clear = actionButton('Clear finished', null, 'panel-action', async () => {
+      try { for (const task of runtime.tasks.filter(t => ['complete','cancelled','failed'].includes(t.status))) await api(`/api/tasks/${task.id}`, { method:'DELETE' }); await refreshRuntime(); } catch(error) { toast(error.message); }
+    }); clear.id='clear-finished'; $('#task-panel').append(clear);
+  }
+  $('#clear-finished').hidden = !runtime.tasks.some(t => ['complete','cancelled','failed'].includes(t.status));
+  if (!$('#add-reminder')) {
+    const button = actionButton('Add reminder','plus','panel-action', () => {
+      let form = $('#reminder-form'); if (form) { form.remove(); return; }
+      form = element('form','assistant-form');form.id='reminder-form';
+      const title=element('input');title.placeholder='Reminder';title.required=true;title.maxLength=200;title.setAttribute('aria-label','Reminder title');
+      const due=element('input');due.type='datetime-local';due.required=true;due.setAttribute('aria-label','Reminder date and time');
+      const submit=element('button','page-primary','Schedule');submit.type='submit';
+      form.append(title,due,element('small','workspace-note','Use your device’s local time. Orbit must be running.'),submit);
+      form.addEventListener('submit',async e=>{e.preventDefault();try{await post('/api/tasks',{title:title.value,dueAt:new Date(due.value).toISOString(),action:'reminder',args:{}});form.remove();toast('Reminder scheduled.');await refreshRuntime();}catch(error){toast(error.message);}});
+      button.after(form);title.focus();
+    });button.id='add-reminder'; $('#task-panel').append(button);
+  }
+}
+function renderAssistantSettings() {
+  const card = element('section','settings-card assistant-settings');
+  card.append(element('h3','','Assistant'),element('p','', 'Groq Free plan · GPT-OSS 120B. Keep your account on the Free plan; Orbit stops at quota limits and has no paid fallback.'));
+  const form=element('form','assistant-form');
+  const label=element('label','',runtime?.setup.hasKey ? 'Replace Groq key' : 'Groq API key');
+  const key=element('input');key.type='password';key.autocomplete='off';key.placeholder=runtime?.setup.hasKey ? 'Connected · enter a replacement key' : 'gsk_…';key.setAttribute('aria-label','Groq API key');label.append(key);
+  const save=element('button','page-primary','Save key');save.type='submit';
+  const message=element('small','workspace-note',runtime?.setup.hasKey?'Key stored privately on this Mac.':'Create a Free-plan key at console.groq.com/keys.');message.setAttribute('role','status');
+  form.append(label,save,message);
+  form.addEventListener('submit',async event=>{event.preventDefault();save.disabled=true;try{if(!key.value.trim())throw Error('Enter your new Groq key.');await post('/api/settings',{groqKey:key.value.trim()});key.value='';message.textContent='Key saved privately on this Mac.';await refreshRuntime();}catch(error){message.textContent=error.message;}finally{save.disabled=false;}});
+  const connection = element('div', 'connection-settings'); connection.append(form); card.append(connection);
+  const speechControls = element('div', 'speech-settings');
+  const row=element('label','setting-row');row.append(element('span','','Read replies aloud · local Kokoro'));
+  const toggle=element('input');toggle.type='checkbox';toggle.checked=runtime?.setup.speech??true;toggle.setAttribute('aria-label','Read replies aloud');
+  toggle.addEventListener('change',async()=>{try{await post('/api/settings',{speech:toggle.checked});if(!toggle.checked)stopSpeech();await refreshRuntime();}catch(error){toast(error.message);}});row.append(toggle);speechControls.append(row);
+  const voice=element('select');voice.setAttribute('aria-label','Kokoro voice');
+  for(const [value,label] of [['af_heart','Heart · US'],['af_bella','Bella · US'],['am_adam','Adam · US'],['bf_emma','Emma · UK'],['bm_george','George · UK']]) { const option=element('option','',label);option.value=value;voice.append(option); }
+  voice.value=runtime?.setup.voice||'af_heart';voice.addEventListener('change',async()=>{try{await post('/api/settings',{voice:voice.value});await refreshRuntime();}catch(error){toast(error.message);}});speechControls.append(voice);
+  speechControls.append(actionButton('Test Kokoro voice','wave','page-secondary',()=>void speak('Hello. I’m Orbit, your personal assistant.')));
+  speechControls.append(element('p','workspace-note',`Kokoro: ${runtime?.setup.kokoro||'not loaded'}. Speech is generated locally. Voice input and selected file text/transcripts go to Groq.`));
+  card.append(speechControls);
+  card.append(element('p','workspace-note','Mac tools: open apps, websites and workspace files; volume; Music/Spotify playback. macOS may request Automation permission. General screen clicking is not enabled.'));
+  if(runtime?.setup.quota)card.append(element('p','workspace-note',`Groq remaining: ${runtime.setup.quota.requests??'—'} requests · ${runtime.setup.quota.tokens??'—'} tokens (provider quota windows).`));
+  return card;
+}
+
 playStartup(app);
+void refreshRuntime(true);
+const events = new EventSource('/api/events');
+events.onmessage = event => { const data = JSON.parse(event.data); if (data.type === 'reminder') { toast(`${data.task.title} · ${data.task.detail}`); if (data.task.status === 'complete' && !requesting && !voicePreview) void speak(`Reminder: ${data.task.title}`); } void refreshRuntime(); };
+events.onerror = () => { if (!requesting) $('#request-status').textContent = 'Local companion disconnected. Reconnecting…'; };
+window.addEventListener('pagehide', () => { events.close(); stopSpeech(); clearTimeout(recordingTimer); microphone?.getTracks().forEach(track => track.stop()); });
+
+
+function renderAnswer(node, text) {
+  node.innerHTML = DOMPurify.sanitize(marked.parse(text, { breaks: true }), { ALLOWED_TAGS: ['p','strong','em','code','pre','br','ul','ol','li','blockquote','a','h1','h2','h3','h4','table','thead','tbody','tr','th','td','hr'], ALLOWED_ATTR: ['href','title'] });
+  for (const link of node.querySelectorAll('a')) { if (!/^https?:\/\//i.test(link.getAttribute('href') || '')) link.removeAttribute('href'); link.rel = 'noopener noreferrer'; }
+}

@@ -3,10 +3,19 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Orbit — an interactive personal assistant frontend.",
+  "description": "Orbit — a local personal assistant with Groq and Kokoro.",
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
     "build": "node scripts/build.mjs",
-    "preview": "node scripts/dev-server.mjs --dist"
+    "preview": "node scripts/dev-server.mjs --dist",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "dompurify": "^3.4.16",
+    "kokoro-js": "^1.2.1",
+    "mammoth": "^1.13.0",
+    "marked": "^18.1.0",
+    "pdf-parse": "^2.4.5"
   }
 }

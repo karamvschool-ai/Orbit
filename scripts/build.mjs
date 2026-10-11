@@ -8,4 +8,7 @@ for (const file of files) await copyFile(file, `dist/${file}`);
 await mkdir('dist/assets', { recursive: true });
 await copyFile('assets/orbital-sphere.png','dist/assets/orbital-sphere.png');
 for (const file of ['startup-black-hole.webm', 'startup-black-hole.mp4', 'startup-black-hole.jpg']) await copyFile(`assets/${file}`, `dist/assets/${file}`);
+await mkdir('dist/vendor', { recursive: true });
+await copyFile('node_modules/marked/lib/marked.esm.js', 'dist/vendor/marked.js');
+await copyFile('node_modules/dompurify/dist/purify.es.mjs', 'dist/vendor/purify.js');
 console.log('Orbit built successfully. Static frontend is in dist/.');
