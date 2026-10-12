@@ -1,0 +1,6 @@
+function numberHeader(headers,name){const raw=headers.get(name);if(raw===null||raw.trim()==='')return null;const value=Number(raw);return Number.isFinite(value)&&value>=0?value:null;}
+export function resetMilliseconds(value){if(!value)return null;let total=0,matched='';for(const match of value.matchAll(/(\d+(?:\.\d+)?)(ms|h|m|s)/g)){total+=Number(match[1])*({ms:1,s:1000,m:60000,h:3600000}[match[2]]);matched+=match[0];}return matched===value?total:null;}
+export function quotaFromHeaders(headers,model,at=Date.now()){
+ const windows=[['requests','Requests per day'],['tokens','Tokens per minute']].map(([key,label])=>{const limit=numberHeader(headers,'x-ratelimit-limit-'+key),remaining=numberHeader(headers,'x-ratelimit-remaining-'+key);const duration=resetMilliseconds(headers.get('x-ratelimit-reset-'+key));return {key,label,limit,remaining,used:limit===null||remaining===null?null:Math.max(0,limit-remaining),percent:limit>0&&remaining!==null?Math.max(0,Math.min(100,(limit-remaining)/limit*100)):null,resetAt:duration===null?null:at+duration};});
+ return {model,observedAt:at,windows,requests:headers.get('x-ratelimit-remaining-requests'),tokens:headers.get('x-ratelimit-remaining-tokens')};
+}

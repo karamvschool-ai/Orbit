@@ -1,6 +1,6 @@
 {
   "name": "orbit",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "type": "module",
   "description": "Orbit \u2014 a local personal assistant with Groq and Kokoro.",
