@@ -5,6 +5,26 @@ import {setTimeout as pause} from 'node:timers/promises';
 const normalize=value=>String(value||'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 const pressable=row=>row.enabled!==false && row.actions?.some(a=>['AXPress','press','select'].includes(a));
 const composer=row=>row.editable && /message|prompt|ask|chat|reply/i.test(row.label+' '+row.context);
+export async function searchApp({app,query,field_label},{control=appControl,wait=pause,signal}={}) {
+ const inspect=async filter=>{signal?.throwIfAborted();return control('inspect',{app,...(filter?{query:filter}:{})});};
+ const fields=state=>{
+  const all=state.elements.filter(row=>row.editable&&['AXTextField','AXComboBox','Edit','ComboBox'].includes(row.role)&&/search|find|what.*play/i.test(row.label));
+  const selected=field_label?all.filter(row=>row.label===field_label):all;
+  return selected.length?selected:all.length===1?all:[];
+ };
+ const matches=value=>String(value||'').trim().toLowerCase()===query.trim().toLowerCase()||String(value||'').replace(/\+/g,' ').trim().toLowerCase()===query.trim().toLowerCase();
+ let state=await inspect('search'),candidates=fields(state);
+ if(candidates.length!==1)throw Error('A unique search field is not readable. Search labels: '+state.elements.filter(row=>row.editable&&/search|find|what.*play/i.test(row.label)).map(row=>row.label).join(' / ')+'. Retry app_search with an exact field_label; do not guess control IDs.');
+ signal?.throwIfAborted();await control('type',{app,snapshot:state.snapshot,element:candidates[0].id,text:query});
+ state=await inspect('search');candidates=fields(state);
+ for(let retry=0;retry<2&&(candidates.length!==1||!matches(candidates[0].value));retry++){await wait(250,undefined,{signal});state=await inspect('search');candidates=fields(state);}
+ if(candidates.length!==1||!matches(candidates[0].value))throw Error('Search text could not be verified. No Enter key was sent.');
+ signal?.throwIfAborted();await control('focus',{app,snapshot:state.snapshot,element:candidates[0].id});
+ state=await inspect('search');candidates=fields(state);
+ if(candidates.length!==1||!matches(candidates[0].value))throw Error('The search field changed. Search was not submitted.');
+ signal?.throwIfAborted();await control('key',{app,snapshot:state.snapshot,key:'enter'});
+ return {searched:query,observation:await inspect(query),note:'Search submitted locally; these are current results, not proof of another action.'};
+}
 export async function sendDirectMessage({app,recipient,text},{control=appControl,signal}={}) {
  const matchesRecipient=state=>state.elements.some(row=>{
   const label=normalize(row.label),context=normalize(row.context),name=normalize(recipient);
