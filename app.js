@@ -933,6 +933,7 @@ function renderGroqUsage(){
     const reset=sample?.resetAt?` · ${sample.resetAt>Date.now()?'reset estimate '+new Date(sample.resetAt).toLocaleTimeString():'window may have reset; awaiting next request'}`:'';row.append(element('p','workspace-note',amount+reset));usage.append(row);
   }
   if(quota?.observedAt)usage.append(element('small','workspace-note','Last reported '+new Date(quota.observedAt).toLocaleTimeString()+'. Other account activity may change these counts.'));
+  const last=runtime?.setup.lastUsage;if(last)usage.append(element('p','workspace-note',`Last AI step: ${last.input.toLocaleString()} input tokens + ${last.output.toLocaleString()} output tokens${last.cached?' · '+last.cached.toLocaleString()+' input tokens cached':''}. App requests may need several AI steps; each step reads the current context.`));
   const limits=element('a','quota-link','View all account limits');limits.href='https://console.groq.com/settings/limits';limits.target='_blank';limits.rel='noopener noreferrer';usage.append(limits,element('p','workspace-note','Daily token and per-minute request totals are not included in these response headers.'));
   return usage;
 }

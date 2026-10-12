@@ -19,7 +19,7 @@ const store=new Store(path.resolve(process.env.ORBIT_DATA_DIR||'.orbit-data'));a
 await mkdir(path.join(store.root,'uploads'),{recursive:true,mode:0o700});
 const groq=new GroqClient(store);const subscribers=new Set();let chatBusy=false, chatController;
 const filePublic=({text,diskName,...f})=>({...f,characters:text?.length||0});
-const publicState=()=>({...store.data,files:store.data.files.map(filePublic),setup:{hasKey:!!store.config.groqKey,speech:store.config.speech,voice:store.config.voice,model:MODEL,platform:process.platform,appControl:!!store.config.appControl,kokoro:speechStatus(),quota:groq.quota,voiceQuota:groq.voiceQuota,blockedUntil:groq.blockedUntil},busy:chatBusy});
+const publicState=()=>({...store.data,files:store.data.files.map(filePublic),setup:{hasKey:!!store.config.groqKey,speech:store.config.speech,voice:store.config.voice,model:MODEL,platform:process.platform,appControl:!!store.config.appControl,kokoro:speechStatus(),quota:groq.quota,voiceQuota:groq.voiceQuota,lastUsage:groq.lastUsage,blockedUntil:groq.blockedUntil},busy:chatBusy});
 const broadcast=(event={type:'state'})=>{for(const res of subscribers) res.write(`data: ${JSON.stringify(event)}\n\n`);};
 const saveState=async()=>{await store.save();broadcast();};
 const types={'.html':'text/html','.css':'text/css','.js':'text/javascript','.mjs':'text/javascript','.svg':'image/svg+xml','.png':'image/png','.webm':'video/webm','.mp4':'video/mp4','.jpg':'image/jpeg'};
