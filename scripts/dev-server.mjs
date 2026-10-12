@@ -51,7 +51,7 @@ async function routes(req,res,url) {
   await store.save(true);broadcast();return json(res,{ok:true});
  }
  if(p==='/api/app-control/test'&&req.method==='POST'){if(chatBusy)throw Error('Stop the current request before testing app control.');return json(res,await testTextEditControl(store));}
- if(p==='/api/app-control/status'&&req.method==='GET')return json(res,await appControl('status'));
+ if(p==='/api/app-control/status'&&req.method==='GET'){if(!chatBusy)closeAppControl();return json(res,await appControl('status'));}
  if(p==='/api/speech'&&req.method==='POST') {const {text}=await jsonBody(req);if(typeof text!=='string'||!text.trim())throw Error('Speech text is empty.');const wav=await speech(store.root,text,store.config.voice);res.writeHead(200,{'Content-Type':'audio/wav','Cache-Control':'no-store'});res.end(wav);broadcast();return;}
  if(p==='/api/speech/load'&&req.method==='POST') {await loadSpeech(store.root);broadcast();return json(res,{ok:true});}
  if(p==='/api/transcribe'&&req.method==='POST') {const buffer=await readBody(req,25*1024*1024);const type=req.headers['content-type']||'audio/webm';const name=type.includes('mp4')?'recording.m4a':type.includes('wav')?'recording.wav':'recording.webm';return json(res,{text:await groq.transcribe(buffer,name,type)});}
