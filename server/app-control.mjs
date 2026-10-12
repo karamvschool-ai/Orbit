@@ -4,6 +4,9 @@ import readline from 'node:readline';
 import {windowsAction} from './platform.mjs';
 const binary=fileURLToPath(new URL('../native/orbit-accessibility',import.meta.url));
 const windowsPending=new Set();
+const desktopPending=new Map();let desktopSequence=0;
+process.parentPort?.on('message',event=>{const message=event.data;if(message?.type!=='app_control_result')return;const pending=desktopPending.get(message.id);if(!pending)return;desktopPending.delete(message.id);clearTimeout(pending.timer);if(message.error)pending.reject(Error(message.error));else pending.resolve(message.result);});
+function desktopInvoke(action,args){return new Promise((resolve,reject)=>{const id=++desktopSequence;const timer=setTimeout(()=>{desktopPending.delete(id);reject(Error('Desktop app control timed out. Retry the request.'));},25000);desktopPending.set(id,{resolve,reject,timer});process.parentPort.postMessage({type:'app_control',id,action,args});});}
 let helper,queue=Promise.resolve(),pending;
 function invoke(body) {
  const operation=queue.catch(()=>{}).then(()=>new Promise((resolve,reject)=> {
@@ -19,11 +22,11 @@ function invoke(body) {
  queue=operation;return operation;
 }
 export async function appControl(action,args={}, {platform=process.platform,invokeImpl=invoke,windowsImpl=windowsAction}={}) {
- if(platform==='darwin')return invokeImpl({action,...args});
+ if(platform==='darwin'){if(process.parentPort&&invokeImpl===invoke)return desktopInvoke(action,args);return invokeImpl({action,...args});}
  if(platform==='win32'){const controller=new AbortController();windowsPending.add(controller);try{return await windowsImpl('app_control',{action,...args},undefined,{signal:controller.signal});}finally{windowsPending.delete(controller);}}
  throw Error('App control requires macOS or Windows.');
 }
-export function closeAppControl(){for(const controller of windowsPending)controller.abort();windowsPending.clear();const child=helper;helper=null;if(pending){clearTimeout(pending.timer);pending.reject(Error('App control stopped.'));pending=null;}child?.kill();}
+export function closeAppControl(){if(process.parentPort){process.parentPort.postMessage({type:'app_control_close'});for(const pending of desktopPending.values()){clearTimeout(pending.timer);pending.reject(Error('App control stopped.'));}desktopPending.clear();}for(const controller of windowsPending)controller.abort();windowsPending.clear();const child=helper;helper=null;if(pending){clearTimeout(pending.timer);pending.reject(Error('App control stopped.'));pending=null;}child?.kill();}
 export function validateAppControl(name,args) {
  if(typeof args.app!=='string'||!args.app.trim()||args.app.length>100)throw Error('Specify the target application name.');
  if(name==='inspect_app') {if(args.query!==undefined&&(typeof args.query!=='string'||args.query.length>120))throw Error('Search text must be at most 120 characters.');return;}

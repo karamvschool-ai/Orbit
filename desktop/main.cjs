@@ -3,13 +3,14 @@ const path=require('node:path');
 const net=require('node:net');
 const crypto=require('node:crypto');
 const fs=require('node:fs/promises');
-let window,engine,tray,quitting=false;
+let window,engine,tray,quitting=false,desktopControl;
 const lock=app.requestSingleInstanceLock();if(!lock)app.quit();
 app.on('second-instance',()=>{window?.show();window?.focus();});
 async function freePort(){return new Promise((resolve,reject)=>{const server=net.createServer();server.on('error',reject);server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(()=>resolve(port));});});}
 app.whenReady().then(async()=> {
  if(!lock)return;
  const port=await freePort(),token=crypto.randomBytes(32).toString('hex'),base=`http://127.0.0.1:${port}`;
+ if(process.platform==='darwin')desktopControl=await import('../server/app-control.mjs');
  const root=app.getAppPath(),data=process.env.ORBIT_DATA_DIR||path.join(app.getPath('userData'),'assistant');
  await fs.mkdir(data,{recursive:true,mode:0o700});
  engine=utilityProcess.fork(path.join(root,'scripts','dev-server.mjs'),[],{cwd:root,serviceName:'Orbit local assistant',stdio:'pipe',env:{...process.env,PORT:String(port),ORBIT_APP_ROOT:path.join(root,'dist'),ORBIT_DATA_DIR:data,ORBIT_DESKTOP_TOKEN:token},allowLoadingUnsignedLibraries:true});
@@ -18,6 +19,8 @@ app.whenReady().then(async()=> {
  await new Promise((resolve,reject)=>{
   const timeout=setTimeout(()=>reject(Error('Orbit’s local engine did not start.')),30000);
   engine.on('message',message=> {
+   if(message.type==='app_control'&&desktopControl){desktopControl.appControl(message.action,message.args).then(result=>engine?.postMessage({type:'app_control_result',id:message.id,result})).catch(error=>engine?.postMessage({type:'app_control_result',id:message.id,error:error.message}));}
+   if(message.type==='app_control_close')desktopControl?.closeAppControl();
    if(message.type==='ready'){ready=true;clearTimeout(timeout);resolve();}
    if(message.type==='notification'&&Notification.isSupported())new Notification({title:'Orbit',body:message.title}).show();
   });
@@ -58,4 +61,4 @@ app.whenReady().then(async()=> {
 }).catch(error=>{dialog.showErrorBox('Orbit could not start',error.message);app.quit();});
 app.on('activate',()=>window?.show());
 app.on('window-all-closed',()=>{});
-app.on('before-quit',()=>{quitting=true;engine?.kill();});
+app.on('before-quit',()=>{quitting=true;desktopControl?.closeAppControl();engine?.kill();});

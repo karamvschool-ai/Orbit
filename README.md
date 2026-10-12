@@ -19,7 +19,7 @@ pnpm package:mac   # Apple Silicon DMG
 pnpm package:win   # Windows x64 NSIS installer; can be built on macOS
 ```
 
-These are unsigned builds, without paid signing certificates or notarization. Operating systems may display an unsigned-app warning. Windows tools are adapter-tested on macOS; native Windows playback/permissions still need testing on a PC.
+Mac builds use a free local ad-hoc signature bound to Orbit’s own app identifier; Windows builds are unsigned. Neither uses paid signing certificates or notarization. Operating systems may display an unsigned-app warning. Windows tools are adapter-tested on macOS; native Windows playback/permissions still need testing on a PC.
 
 ## Run in a browser
 
@@ -47,7 +47,7 @@ The current Mac's bundled Codex Node runtime can also start the server using `sc
 
 ## Interact with applications
 
-In **Settings → App control**, enable **Allow app interaction** and select **Check app access**. On Mac, grant Orbit **System Settings → Privacy & Security → Accessibility** access yourself, then restart Orbit if macOS requests it. Development runs may require the Node/terminal process instead. On Windows, normal desktop apps use UI Automation; elevated apps cannot be controlled by a normal Orbit process.
+In **Settings → App control**, enable **Allow app interaction** and select **Check app access**. On Mac, grant Orbit **System Settings → Privacy & Security → Device Control and Data Access (Accessibility on older macOS)** access yourself, then restart Orbit if macOS requests it. Development runs may require the Node/terminal process instead. On Windows, normal desktop apps use UI Automation; elevated apps cannot be controlled by a normal Orbit process.
 
 Try “Play [song] by [artist] in Spotify” or “Put this prompt into [named AI app/chat], but don’t send it.” Explicitly ask to send if that is what you want. Orbit reads an application’s exposed text and controls and checks the result after acting. Password fields are excluded. This is not universal visual control: games, canvas-only interfaces, custom controls without accessibility support, and account playback restrictions can prevent an action. GPT-OSS is text-only. No Spotify paid API or subscription is added.
 
