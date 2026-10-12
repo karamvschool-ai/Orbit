@@ -1,4 +1,4 @@
-import {testTextEditControl} from '../server/app-control-check.mjs';
+import {testTextEditControl,checkSpotifyResults} from '../server/app-control-check.mjs';
 import { appControl, closeAppControl } from '../server/app-control.mjs';
 import { computerAction } from '../server/platform.mjs';
 import http from 'node:http';
@@ -19,7 +19,7 @@ const store=new Store(path.resolve(process.env.ORBIT_DATA_DIR||'.orbit-data'));a
 await mkdir(path.join(store.root,'uploads'),{recursive:true,mode:0o700});
 const groq=new GroqClient(store);const subscribers=new Set();let chatBusy=false, chatController;
 const filePublic=({text,diskName,...f})=>({...f,characters:text?.length||0});
-const publicState=()=>({...store.data,files:store.data.files.map(filePublic),setup:{hasKey:!!store.config.groqKey,speech:store.config.speech,voice:store.config.voice,model:MODEL,platform:process.platform,appControl:!!store.config.appControl,kokoro:speechStatus(),quota:groq.quota,blockedUntil:groq.blockedUntil},busy:chatBusy});
+const publicState=()=>({...store.data,files:store.data.files.map(filePublic),setup:{hasKey:!!store.config.groqKey,speech:store.config.speech,voice:store.config.voice,model:MODEL,platform:process.platform,appControl:!!store.config.appControl,kokoro:speechStatus(),quota:groq.quota,voiceQuota:groq.voiceQuota,blockedUntil:groq.blockedUntil},busy:chatBusy});
 const broadcast=(event={type:'state'})=>{for(const res of subscribers) res.write(`data: ${JSON.stringify(event)}\n\n`);};
 const saveState=async()=>{await store.save();broadcast();};
 const types={'.html':'text/html','.css':'text/css','.js':'text/javascript','.mjs':'text/javascript','.svg':'image/svg+xml','.png':'image/png','.webm':'video/webm','.mp4':'video/mp4','.jpg':'image/jpeg'};
@@ -50,6 +50,7 @@ async function routes(req,res,url) {
   if(['af_heart','af_bella','am_adam','bf_emma','bm_george'].includes(data.voice))store.config.voice=data.voice;
   await store.save(true);broadcast();return json(res,{ok:true});
  }
+ if(p==='/api/app-control/spotify-check'&&req.method==='POST'){if(chatBusy)throw Error('Stop the current request before checking Spotify.');return json(res,await checkSpotifyResults(store));}
  if(p==='/api/app-control/test'&&req.method==='POST'){if(chatBusy)throw Error('Stop the current request before testing app control.');return json(res,await testTextEditControl(store));}
  if(p==='/api/app-control/status'&&req.method==='GET'){if(!chatBusy)closeAppControl();return json(res,await appControl('status'));}
  if(p==='/api/speech'&&req.method==='POST') {const {text}=await jsonBody(req);if(typeof text!=='string'||!text.trim())throw Error('Speech text is empty.');const wav=await speech(store.root,text,store.config.voice);res.writeHead(200,{'Content-Type':'audio/wav','Cache-Control':'no-store'});res.end(wav);broadcast();return;}

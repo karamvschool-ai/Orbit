@@ -567,3 +567,14 @@ kbd { font: inherit; background: #eaeaec; border-radius: 4px; padding: 3px 6px; 
 .request-method.is-speaking .voice-meter { display:flex; }
 .orbit-app[data-state='thinking'] .status-ring { animation:none; border-color:#b7b7bd; background:conic-gradient(#131316 var(--task-progress,0deg),transparent 0); }
 .orbit-app[data-state='speaking'] .response-avatar { transform:scale(calc(1 + var(--speech-level,0)*.2)); }
+
+.groq-usage { grid-column:1 / -1; border-top:1px solid #ddddE4; margin-top:20px; padding-top:22px; }
+.quota-row { margin:18px 0; }
+.quota-heading { display:flex; justify-content:space-between; gap:12px; font-size:13px; margin-bottom:9px; }
+.quota-count { color:#787881; font-variant-numeric:tabular-nums; }
+.quota-bar { appearance:none; width:100%; height:8px; border:none; border-radius:99px; overflow:hidden; background:#e6e6eb; }
+.quota-bar::-webkit-progress-bar { background:#e6e6eb; border-radius:99px; }
+.quota-bar::-webkit-progress-value { background:linear-gradient(90deg,#393941,#111114); border-radius:99px; transition:width .4s ease; }
+.quota-bar::-moz-progress-bar { background:#222227; border-radius:99px; }
+.quota-bar.is-unknown::-webkit-progress-value { background:#e6e6eb; }
+.quota-link { display:inline-block; color:#25252c; font-size:12px; margin-top:12px; }

@@ -65,3 +65,9 @@ test('local TextEdit diagnostic verifies typing without a model call and refuses
  let actions=0;
  await assert.rejects(testTextEditControl({config:{appControl:true}},{control:async action=>{if(action==='status')return {available:true};if(action==='type')actions++;return {snapshot:'s',elements:[{id:'e1',role:'AXTextArea',editable:true,value:'Existing user document'}]};},computer:async()=>{},wait:async()=>{},platform:'darwin'}),/blank document/);assert.equal(actions,0);
 });
+test('Spotify local check preserves song/artist context and never equates missing controls with no results',async()=>{
+ const {checkSpotifyResults}=await import('../server/app-control-check.mjs');let calls=0;
+ const result=await checkSpotifyResults({config:{appControl:true}},{control:async(_action,args)=>{calls++;if(calls===1)return {elements:[{role:'AXComboBox',label:'What do you want to play?',value:'Bellissima'}]};assert.equal(args.query,'Bellissima');return {interfaceState:'ready',elements:[{label:'Play',context:'Bellissima · Song · Italian Atmosphere'},{label:'Play Bellissima',context:'Bellissima · Song · Annalisa'}]};}});
+ assert.deepEqual(result.results,['Bellissima · Song · Italian Atmosphere','Bellissima · Song · Annalisa']);
+ const unavailable=await checkSpotifyResults({config:{appControl:true}},{control:async()=>({interfaceState:'unavailable_or_loading',elements:[]})});assert.match(unavailable.message,/does not mean there are no results/);
+});

@@ -22,3 +22,11 @@ export async function testTextEditControl(store,{control=appControl,computer=com
  if(!result.elements.some(e=>e.role==='AXTextArea'&&e.value?.includes(text)))throw Error('Typing was attempted but its result could not be verified. Check the unsaved TextEdit document.');
  return {ok:true,message:'Verified: Orbit created a blank TextEdit document, entered text and read it back. No Groq request was made. The document is unsaved.'};
 }
+export async function checkSpotifyResults(store,{control=appControl}={}) {
+ if(!store.config.appControl)throw Error('Enable Allow app interaction first.');
+ let observation=await control('inspect',{app:'Spotify'});
+ const field=observation.elements.find(e=>['AXComboBox','AXTextField','Edit'].includes(e.role)&&/play|search/i.test(e.label||''));
+ if(field?.value?.trim())observation=await control('inspect',{app:'Spotify',query:field.value.trim().slice(0,120)});
+ const results=observation.interfaceState==='unavailable_or_loading'?[]:[...new Set(observation.elements.filter(e=>/^(?:play|pause)(?: |$)/i.test(e.label||'')&&e.context).map(e=>e.context))].slice(0,8);
+ return {interfaceState:observation.interfaceState,results,message:results.length?'Spotify results read locally: '+results.join(' / '):'Spotify’s result contents are not readable yet. This does not mean there are no results. Reader saw '+observation.elements.length+' controls in '+(observation.diagnostics?.windows??'?')+' windows ('+(observation.diagnostics?.visited??'?')+' nodes). Try again once its search has loaded.'};
+}

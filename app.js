@@ -819,6 +819,7 @@ async function refreshRuntime(initial = false) {
     try {
       runtime = await (await api('/api/state')).json();
       settings.speech = runtime.setup.speech;
+      document.querySelectorAll('.groq-usage').forEach(node=>node.replaceWith(renderGroqUsage()));
       savedFiles = runtime.files;
       conversations.splice(0, conversations.length, ...runtime.chats.map(chat => ({ ...chat, prompt: chat.messages.find(m => m.role === 'user')?.content || '', time: new Date(chat.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) })));
       renderTasks();
@@ -914,10 +915,26 @@ function renderAssistantSettings() {
   controlToggle.addEventListener('change',async()=>{try{await post('/api/settings',{appControl:controlToggle.checked});await refreshRuntime();const status=await(await api('/api/app-control/status')).json();accessMessage.textContent=controlToggle.checked?(status.available?'App control is ready. Ask Orbit to use an app.':'App control is enabled, but macOS Device Control and Data Access permission is still needed for Orbit.'):'App control disabled.';}catch(error){accessMessage.textContent=error.message;}});
   controlLabel.append(controlToggle);appControls.append(controlLabel,actionButton('Check app access',null,'page-secondary',async()=>{try{const status=await(await api('/api/app-control/status')).json();accessMessage.textContent=status.available?'System app access is available. Enable Allow app interaction to use it.':status.permission+' permission is needed. Enable Orbit in System Settings, then check again.';}catch(error){accessMessage.textContent=error.message;}}),accessMessage);
   if(runtime?.setup.platform==='darwin'){appControls.append(element('p','workspace-note','Local test: create an unsaved blank TextEdit document, type a test sentence and read it back. No Groq usage or data transfer.'),actionButton('Test TextEdit control',null,'page-secondary',async()=>{accessMessage.textContent='Testing locally…';try{const result=await post('/api/app-control/test',{});accessMessage.textContent=result.message;}catch(error){accessMessage.textContent=error.message;}}));}
+  if(runtime?.setup.platform==='darwin')appControls.append(actionButton('Check Spotify results',null,'page-secondary',async()=>{accessMessage.textContent='Reading Spotify locally…';try{const result=await post('/api/app-control/spotify-check',{});accessMessage.textContent=result.message;}catch(error){accessMessage.textContent=error.message;}}),element('p','workspace-note','Reads the current Spotify search without changing it, starting playback or using Groq.'));
   card.append(appControls);
   card.append(element('p','workspace-note','Computer tools: open apps, websites and workspace files; volume; Music/Spotify playback. macOS may request Automation permission; Windows uses its installed-app and media APIs. App interaction uses observed Accessibility/UI Automation controls; pixel-only interfaces are unavailable.'));
-  if(runtime?.setup.quota)card.append(element('p','workspace-note',`Groq remaining: ${runtime.setup.quota.requests??'—'} requests · ${runtime.setup.quota.tokens??'—'} tokens (provider quota windows).`));
+  card.append(renderGroqUsage());
   return card;
+}
+
+function renderGroqUsage(){
+  const usage=element('section','groq-usage');usage.append(element('h3','','Groq usage'),element('p','workspace-note','GPT-OSS 120B · reported by Groq after each AI request.'));
+  const quota=runtime?.setup.quota;
+  for(const [key,label] of [['requests','Requests per day'],['tokens','Tokens per minute']]) {
+    const sample=quota?.windows?.find(w=>w.key===key),row=element('div','quota-row');
+    const heading=element('div','quota-heading');heading.append(element('span','',label),element('span','quota-count',sample?.percent!==null&&sample?.percent!==undefined?`${Math.round(sample.percent)}% used`:'Awaiting data'));row.append(heading);
+    const bar=element('progress','quota-bar');bar.max=100;bar.value=sample?.percent??0;bar.setAttribute('aria-label',label+' usage');if(sample?.percent===null||sample?.percent===undefined){bar.removeAttribute('value');bar.classList.add('is-unknown');}row.append(bar);
+    const amount=sample?.remaining!==null&&sample?.remaining!==undefined?`${sample.remaining.toLocaleString()} remaining${sample.limit!==null?' of '+sample.limit.toLocaleString():''}`:'Make an AI request to load your current limits.';
+    const reset=sample?.resetAt?` · ${sample.resetAt>Date.now()?'reset estimate '+new Date(sample.resetAt).toLocaleTimeString():'window may have reset; awaiting next request'}`:'';row.append(element('p','workspace-note',amount+reset));usage.append(row);
+  }
+  if(quota?.observedAt)usage.append(element('small','workspace-note','Last reported '+new Date(quota.observedAt).toLocaleTimeString()+'. Other account activity may change these counts.'));
+  const limits=element('a','quota-link','View all account limits');limits.href='https://console.groq.com/settings/limits';limits.target='_blank';limits.rel='noopener noreferrer';usage.append(limits,element('p','workspace-note','Daily token and per-minute request totals are not included in these response headers.'));
+  return usage;
 }
 
 playStartup(app);
