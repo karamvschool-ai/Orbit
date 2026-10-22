@@ -32,6 +32,7 @@ test('desktop runtime serves built imports and requires its private session',asy
  t.after(async()=>{if(server.exitCode===null){server.kill();await once(server,'exit');}await rm(root,{recursive:true,force:true});});
  await new Promise((resolve,reject)=>{server.stdout.once('data',resolve);server.once('error',reject);server.once('exit',code=>reject(Error(`Server exited ${code}`)));});
  assert.equal((await fetch(base+'/api/state')).status,403);
+ assert.equal((await fetch(base+'/api/state',{headers:{Cookie:`orbit_session=${token}-wrong`}})).status,403);
  for(const asset of ['/','/app.js','/speech-playback.js','/vendor/marked.js','/vendor/purify.js']) {
   const response=await fetch(base+asset,{headers:{Cookie:`orbit_session=${token}`}});assert.equal(response.status,200,asset);
   if(asset.endsWith('.js'))assert.match(response.headers.get('Content-Type'),/javascript/);

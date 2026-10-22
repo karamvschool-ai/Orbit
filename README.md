@@ -1,78 +1,127 @@
 # Orbit
 
-Orbit runs as a standalone macOS/Windows desktop app with its own private local engine, or as a browser frontend connected to the development server. The deployed Cloudflare static page remains separate.
+**A personal AI assistant with a little gravity.**
 
-## Desktop app
+Orbit pairs an interactive black-hole interface with voice and text conversations, a file workspace, scheduled tasks, and local desktop controls. The singularity bends around your cursor, its waves respond to speech, and the interface shows what you asked and what the assistant is doing.
 
-Install the Apple Silicon Mac DMG or Windows x64 EXE from `releases/`. Open Orbit normally: it starts its engine automatically, with no Node installation, terminal, or separate browser needed. Use Settings to enter your Groq **Free-plan** key on each computer. Internet is required for Groq and the initial Kokoro model download; Kokoro then runs locally.
+[Explore the visual demo](https://myorbit.pages.dev/) · [Setup](#quick-start) · [Privacy and security](SECURITY.md)
 
-To reuse the development app's chats, uploads, schedules, key and cached voice model, choose **Orbit → Import existing Orbit data…** (Mac) or **File → Import existing Orbit data…** (Windows), then select `/Users/karam/Orbit/.orbit-data` or your transferred `.orbit-data` folder. The app preserves a backup before importing and restarts. The installers contain no personal key, chats, or files.
+<p align="center">
+  <img src="assets/startup-black-hole.jpg" alt="Black-hole visualization used in Orbit’s monochrome opening sequence" width="800">
+</p>
 
-Desktop data lives in `~/Library/Application Support/Orbit/assistant` on macOS and `%APPDATA%/Orbit/assistant` on Windows. **Help → Open private data folder** opens it. Closing the window keeps reminders running in the menu bar/tray; Quit stops them. The computer must remain awake. macOS may request microphone/Automation access; Windows media controls require an active player session.
+*Opening-sequence source: NASA’s Goddard Space Flight Center / Jeremy Schnittman. [Media credits](assets/STARTUP-CREDITS.md).*
 
-Build locally:
+> **The public website is a visual demo.** The working assistant runs on your computer. This repository does not provide a shared API key, a public AI proxy, or remote access to the developer’s computer. Each user supplies their own Groq key locally.
+
+## What it does
+
+| Feature | How it works |
+| --- | --- |
+| Text and voice conversations | GPT-OSS 120B through Groq; microphone recordings use Groq transcription. |
+| Spoken replies | Kokoro generates speech locally after an initial model download. |
+| App interaction | With explicit opt-in and OS permission, reads supported app controls, enters text, presses buttons, and checks the result. |
+| Music controls | Searches Spotify, uses the requested song or playlist’s controls, and verifies supported playback state. |
+| Tasks and reminders | Persists scheduled supported actions and displays upcoming work. Orbit must stay running and the computer awake. |
+| Saved conversations | Stores chats locally so you can return to them. |
+| File workspace | Stores your uploads and reads extracted document text or audio transcripts. |
+| Reactive visuals | Animated gravitational strands, orbiting particles, cursor distortion, audio-reactive waves, and a cinematic opening. |
+
+App control uses macOS Accessibility or Windows UI Automation. It depends on controls the application exposes: it is **not universal screen control**. Games, canvas interfaces, elevated windows, and custom controls may be unreadable. Orbit stops when it cannot verify a destination or outcome.
+
+## Quick start
+
+### Requirements
+
+- Node.js **22 or newer** and [pnpm](https://pnpm.io/installation).
+- macOS or Windows for computer-control features.
+- Your own Groq account and API key. To stay within free usage, keep the account on the **Free plan**.
+- Internet for Groq and the initial Kokoro model download. Speech synthesis runs locally after the model is cached.
 
 ```sh
-pnpm install
-pnpm desktop
-pnpm package:mac   # Apple Silicon DMG
-pnpm package:win   # Windows x64 NSIS installer; can be built on macOS
-```
-
-Mac builds use a free local ad-hoc signature bound to Orbit’s own app identifier; Windows builds are unsigned. Neither uses paid signing certificates or notarization. Operating systems may display an unsigned-app warning. Windows tools are adapter-tested on macOS; native Windows playback/permissions still need testing on a PC.
-
-## Run in a browser
-
-Requires Node.js 20.19+ (Node 22+ recommended) and macOS or Windows for computer tools.
-
-```sh
+git clone https://github.com/karamvschool-ai/Orbit.git
+cd Orbit
 pnpm install
 pnpm dev
 ```
 
-Open http://localhost:5173. Enter your **Groq Free-plan API key in Settings**, not in chat. The key is saved in `.orbit-data/config.json` with owner-only permissions. `.orbit-data/` is Git-ignored and never served as a static directory. Replace a key pasted into any chat with a newly generated key in Settings.
+Open **http://localhost:5173**, then enter your key in **Settings → Groq API key**. Never paste a key into a conversation, issue, or source file. The key is stored privately on your device and is not returned by the state API.
 
-The current Mac's bundled Codex Node runtime can also start the server using `scripts/start-local.zsh`.
+Try:
 
-## Features
+- “Explain what an event horizon is in one sentence.”
+- “Open Spotify.”
+- “Set volume to 30%.”
+- “Play my Summer? playlist in Spotify.”
+- “Remind me tomorrow at 4 PM to review my notes.”
 
-- Settings shows reported daily-request and per-minute-token usage bars, remaining counts, reset estimates and the last update time. Missing headers remain unknown, voice quotas stay separate, and samples survive restart. Other Groq limits are available through the account limits link.
-- App requests use a smaller task-specific tool list and short current observations. An action and its follow-up observation share one tool call. Settings also shows actual input/output token counts for the last AI step. Requests stop after repeated unchanged screens or failed controls, use at most 12 actions, and have a two-minute AI/action-loop deadline with at most 30 seconds of rate-limit waiting. Free limits still apply; there is no paid fallback.
-- Version 1.2.4 sends no tool schemas for ordinary questions, uses only relevant domain instructions, removes redundant parameter descriptions and default observation fields, and retains only the last two complete action/response pairs plus a short outcome ledger. Local exact commands include current date/time, opening common apps, setting/reading volume and basic Music/Spotify controls. `app_search` verifies and submits a real search field locally, returning current results in one tool call; it cannot submit a message composer. Selected attachments retain retrieval tools and excerpted text. Short follow-ups retain the latest authored goal, without unrelated previous tasks. Provider validation errors are explained with credentials redacted.
-- Run `node scripts/measure-token-efficiency.mjs` for a reproducible offline comparison with 1.2.3. Its figures measure serialized input characters, not provider token counts. Fixtures reduced simple-question input by 96% and six-step app input by 41%; “Open Spotify” changed from two model calls to zero. Real usage depends on the prompt and app contents.
-- Playlist requests use the requested playlist's named Play control and require its Pause state plus active playback for verification. Generic player Play cannot substitute for a playlist. A requested new chat must be opened and verified blank before any prompt is typed; an unchanged existing conversation is refused.
-- Clear commands such as “Play my Summer? playlist in Spotify” run the playlist workflow locally without a Groq call. The reader first looks in the visible library, opens the uniquely named playlist, and inspects the named Pause control separately from its long song list. An already-active requested playlist is verified without toggling it off.
-- Direct messages use a dedicated workflow after opening the conversation: verify its recipient header and an empty composer, enter and read back the exact draft, submit only once, and check visible message evidence. A sidebar/profile match alone is refused. If delivery cannot be verified, Orbit does not automatically resend. New-chat and DM safeguards have regression coverage; actual third-party sending was not exercised during the 1.2.3 test.
-- Groq `openai/gpt-oss-120b` text chat and local tool calling. The current request, action status, actual tool results, and final reply drive the home UI.
-- Voice input records up to 90 seconds, then uses Groq `whisper-large-v3-turbo`. Grant microphone permission when prompted. Recording is explicit: click the microphone to start and click again to submit.
-- Thinking fills the central black circle using real processing/tool milestones; Groq does not expose an exact percent complete. During speech, the gravitational waves and top equalizer follow actual audio amplitude and frequency bands.
-- Kokoro 82M runs locally on CPU behind `/api/speech`. Its quantized model downloads from Hugging Face once (roughly 100 MB plus voice data), then uses the local cache. No hosted speech billing. The engine prewarms the model in a worker, generates a short first phrase and prefetches subsequent phrases during playback. Replies are spoken automatically; Settings selects the voice or disables speech. Response options offer Read aloud and Stop speaking.
-- Persistent conversations, full chat history, continue/new/delete controls.
-- Persistent workspace uploads (25 MB per file). Readable formats: text/code, Markdown, JSON, CSV, text PDFs, DOCX. Audio and audio tracks in supported videos are transcribed through Groq. Images can be previewed but **GPT-OSS does not interpret their visuals**; scanned PDFs and unsupported formats are retained with an explicit capability note. Selected extracted text/transcripts go to Groq. Text is limited to 1,000,000 stored characters; model context uses relevant excerpts.
-- Mac and Windows tools: list/open installed apps, open HTTP(S) websites and workspace files, read/set output volume, control Music/Spotify playback. Semantic app interaction: inspect visible controls, press buttons, enter text and use keyboard shortcuts, with a new observation after every action. Spotify song requests search its desktop app, use the observed playback controls and verify the actual song/player state. No arbitrary shell commands or pixel-based screen clicking. macOS may request Automation access for media controls.
-- Natural-language reminders and scheduled supported computer actions. Upcoming tasks are sorted by due time. Add reminder also works without AI. When due, the server executes the action or sends a desktop notification and a browser event. Tasks persist across restarts, with missed reminders executed when the server resumes. Interrupted running actions are marked failed rather than silently retried.
+Scheduling currently uses **America/New_York**. Give a clear date and time; reminders only run while the engine is active.
 
-## Interact with applications
+### Run as a desktop app
 
-In **Settings → App control**, enable **Allow app interaction** and select **Check app access**. On Mac, grant Orbit **System Settings → Privacy & Security → Device Control and Data Access (Accessibility on older macOS)** access yourself, then restart Orbit if macOS requests it. Development runs may require the Node/terminal process instead. On Windows, normal desktop apps use UI Automation; elevated apps cannot be controlled by a normal Orbit process.
+```sh
+pnpm desktop
+```
 
-Try “Play [song] by [artist] in Spotify” or “Put this prompt into [named AI app/chat], but don’t send it.” Explicitly ask to send if that is what you want. Orbit reads an application’s exposed text and controls and checks the result after acting. Password fields are excluded. This is not universal visual control: games, canvas-only interfaces, custom controls without accessibility support, and account playback restrictions can prevent an action. GPT-OSS is text-only. No Spotify paid API or subscription is added. The reader enables Chromium accessibility, selects the focused window, groups track/artist controls, and preserves result context when trimming large trees. Incomplete or loading interface text is never evidence that a song is absent. **Check Spotify results** in Settings is a local diagnostic that uses no Groq quota.
+The desktop app starts its own local engine. Once packaged, it does not need a separate Node installation or terminal. Enter your own key on each device.
 
-The app-control permission is off by default. Visible interface text is sent to Groq while carrying out requests. Turn it off at any time in Settings. The composer changes to **Stop request** during a request; stopping prevents further actions but cannot undo actions already completed. **Test TextEdit control** runs a fixed local Mac diagnostic: create an unsaved blank document, type a test sentence and read it back. It uses no Groq quota and sends no app text externally. General app clicks/typing cannot be scheduled; reminders and the existing supported scheduled actions continue to work.
+To enable app interaction, turn on **Settings → Allow app interaction**. On macOS, grant Orbit the requested Accessibility / Device Control and Data Access permission in System Settings. Windows uses UI Automation and cannot control apps running with higher privileges than Orbit.
 
-## No-cost operation
+Closing the window keeps Orbit in the menu bar or tray so reminders can run. **Quit** stops the engine. There is currently no automatic updater.
 
-Keep the Groq account on its **Free plan**. Orbit uses no paid built-in tools, paid speech endpoint, or automatic paid fallback. Short free-plan chat quota waits are displayed and retried at most twice; longer or transcription quota errors pause requests instead of switching accounts. Use the composer Stop button to cancel pending requests. Keys in a paid Groq organization can still incur that organization's charges: Orbit cannot verify the billing plan from an API key. The Settings screen explains this restriction.
+### Build installers
 
-The Groq key, chats, files, speech cache, and schedules remain in `.orbit-data/`. Requests to Groq send prompts, recent chat context, selected extracted text, tool results (including visible app interface text when app control is enabled), or audio for transcription. Kokoro inference itself stays local.
+```sh
+pnpm package:mac   # Apple Silicon .dmg; requires macOS and Swift tools
+pnpm package:win   # Windows x64 NSIS .exe
+```
 
-The **engine must remain running and the computer awake** for scheduled actions to execute on time. A static Cloudflare Pages page alone cannot control the computer. There is currently no cloud backend, remote access, pixel-based GUI automation, room-device integration, or preinstalled local chat-model fallback.
+Installers are written to `releases/` and are excluded from Git. Mac builds use a local ad-hoc signature; Windows builds are unsigned. Neither is notarized or signed with a paid certificate. Native Windows control still needs verification on a Windows PC; adapter tests alone do not establish full Windows compatibility.
 
-## Verification
+## Your data and API usage
+
+- **No shared credentials:** cloning this repository does not give anyone access to the developer’s Groq account, chats, uploads, or computer.
+- **Local storage:** development data lives in `.orbit-data/`. In the desktop app, **Help → Open private data folder** shows the actual location. Use **Import existing Orbit data…** to migrate your own data; Orbit makes a backup first. Do not publish that folder or its backups.
+- **What goes to Groq:** prompts, recent chat context, selected file excerpts, tool results, and microphone/audio content for transcription. With app control enabled, relevant visible app text also goes to Groq. Kokoro synthesis stays local.
+- **File support:** text/code, Markdown, JSON, CSV, text PDFs, and DOCX; supported audio/video uploads can yield audio transcripts. GPT-OSS does **not** interpret images, scanned PDFs, or video frames here. Unsupported files are retained with a capability note. Maximum upload: 25 MB per file.
+- **Free limits still apply:** Orbit shows reported usage and limits repeated waits. Common exact commands run locally, and AI requests use compact context and relevant tools. There is no automatic paid fallback or account rotation. Orbit cannot determine the billing plan from a key: a key belonging to a paid organization can incur that organization’s charges.
+- **Local service only:** the engine binds to `127.0.0.1`, checks request Host and Origin, and uses a private session token in desktop mode. It is not designed to be exposed through a tunnel, reverse proxy, or public server. See [SECURITY.md](SECURITY.md) for the trust boundaries.
+
+## Development
 
 ```sh
 pnpm test
 pnpm build
+node scripts/measure-token-efficiency.mjs
 ```
 
-Tests also cover app-control opt-in, scoped dispatch, valid compacted snapshots, cancellation, Spotify search/playback verification, and native Mac permission status. Tests cover built desktop imports and session authentication, speech chunking, Windows tool dispatch, safe data import paths, persistence/restarts, serialized saves, scheduling and failed actions, tool argument validation, workspace boundaries, quota stopping, and the model/tool/result loop. Build packages only allowlisted frontend assets; the local API, key and data are excluded.
+`pnpm build` produces an allowlisted static frontend in `dist/`. It excludes the local engine, API key, chats, uploads, and schedules. Publishing that directory does not publish a working AI or computer-control endpoint.
+
+The offline efficiency fixture compares version 1.2.4 with 1.2.3: simple-question input text fell by 96%, and a six-step app simulation by 41%. “Open Spotify” changed from two model calls to zero. These are **serialized input-character measurements**, not exact token savings or a guarantee for every request.
+
+Tests cover persistence, scheduling, file boundaries, quota handling, scoped app actions, search/playback verification, new-chat and message safeguards, cancellation, and desktop session authentication. They use isolated temporary data and mock model calls; they do not require a real Groq key or send real messages.
+
+### Project layout
+
+```text
+app.js, style.css         Interface, conversations, tasks, settings
+singularity.js           Black-hole scene and interaction
+core-field.js            Field rendering
+fluid-simulation.js      Fluid effects
+startup.js               Opening sequence
+speech-playback.js       Audio playback and reactive metering
+server/                  Groq, local tools, storage, speech, platform adapters
+native/                  macOS Accessibility helper source
+desktop/                 Electron shell and app lifecycle
+scripts/                 Development server, builds, packaging, measurements
+tests/                   Automated regression tests
+assets/                  Visual media and attribution
+```
+
+## Known limits
+
+Orbit is a personal project under active development. App actions can fail when an interface changes or exposes incomplete controls. Finding a profile is not proof of message delivery, and the assistant should not be trusted to complete sensitive actions unattended. Stopping a request prevents subsequent actions but cannot undo completed ones.
+
+Groq `429` errors indicate usage limits; `403` errors indicate access restrictions. VPNs or network policies may affect access. Orbit cannot override provider restrictions. There is no cloud scheduler, remote computer access, room-device integration, or bundled local chat-model fallback.
+
+For a security concern, follow [the reporting guidance](SECURITY.md). Please remove credentials, personal messages, and identifying file contents from screenshots or logs before sharing them.

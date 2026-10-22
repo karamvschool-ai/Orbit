@@ -6,3 +6,5 @@ allowBuilds:
 supportedArchitectures:
   os: [darwin, win32]
   cpu: [arm64, x64]
+overrides:
+  sharp: 0.35.5

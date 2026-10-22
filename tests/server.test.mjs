@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { once } from 'node:events';
+import { request } from 'node:http';
 
 test('local API protects credentials and files, persists uploads and validates scheduling',async t=> {
  const root=await mkdtemp(path.join(os.tmpdir(),'orbit-server-test-'));const port=5174;const base=`http://localhost:${port}`;
@@ -17,7 +18,15 @@ test('local API protects credentials and files, persists uploads and validates s
  let state=await(await fetch(base+'/api/state')).json();assert.equal(state.setup.hasKey,true);assert.ok(!JSON.stringify(state).includes('gsk_'));
  assert.equal((await fetch(base+'/api/settings',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json'},body:'{}'})).status,403);
  assert.equal((await fetch(base+'/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,403);
- assert.equal((await fetch(base+'/.orbit-data/config.json')).status,404);assert.equal((await fetch(base+'/server/store.mjs')).status,404);
+ assert.equal((await fetch(base+'/api/state',{headers:{Origin:'https://untrusted.example'}})).status,403);
+ const foreignHostStatus=await new Promise((resolve,reject)=>{
+  const req=request(base+'/api/state',{headers:{Host:'untrusted.example'}},res=>{res.resume();resolve(res.statusCode);});
+  req.on('error',reject);req.end();
+ });
+ assert.equal(foreignHostStatus,403);
+ for(const privatePath of ['/.orbit-data/config.json','/.env','/.git/config','/server/store.mjs','/package.json','/.openai/hosting.json','/assets/..%2f.orbit-data%2fconfig.json']) {
+  assert.equal((await fetch(base+privatePath)).status,404,privatePath);
+ }
  const uploaded=await fetch(base+'/api/files',{method:'POST',headers:{Origin:base,'Content-Type':'text/plain','X-File-Name':'test.txt'},body:'Silver Comet'});assert.equal(uploaded.status,201);const file=await uploaded.json();assert.equal(file.capability,'Readable text');
  state=await(await fetch(base+'/api/state')).json();assert.equal(state.files.length,1);assert.ok(!('text' in state.files[0]));assert.equal((await(await fetch(base+`/api/files/${file.id}/text`)).json()).text,'Silver Comet');
  const schedule=await post('/api/tasks',{title:'Future test',dueAt:new Date(Date.now()+3600000).toISOString(),action:'reminder',args:{}});assert.equal(schedule.status,201);const task=await schedule.json();assert.equal(task.status,'scheduled');

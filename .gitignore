@@ -1,7 +1,8 @@
 dist/
 node_modules/
 .DS_Store
-.openai/local/
+.openai/
+.codex/
 *.tar.gz
 .orbit-data/
 .env
@@ -9,3 +10,20 @@ node_modules/
 releases/
 
 native/orbit-accessibility
+
+# Private configuration, exports, and signing material
+.orbit-data*/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.pem
+*.key
+*.p12
+*.pfx
+.npmrc
+
+# Built installers belong in release assets, never source commits
+*.dmg
+*.exe
+*.blockmap
