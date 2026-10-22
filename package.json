@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
-    "dompurify": "^3.4.16",
+    "dompurify": "^3.4.17",
     "kokoro-js": "^1.2.1",
     "mammoth": "^1.13.0",
     "marked": "^18.1.0",
