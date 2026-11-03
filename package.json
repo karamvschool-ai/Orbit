@@ -18,7 +18,7 @@
     "dompurify": "^3.4.16",
     "kokoro-js": "^1.2.1",
     "mammoth": "^1.13.0",
-    "marked": "^18.1.0",
+    "marked": "^18.1.1",
     "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
