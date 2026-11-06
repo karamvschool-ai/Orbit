@@ -1,4 +1,4 @@
-/* Compact radial material transport. The black source disc is sampled through an
+/* compact radial material transport. the black source disc is sampled through an
  * inverse displacement map; no white pixels, historical cuts or cursor overlay. */
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const smooth = value => value * value * (3 - 2 * value);
@@ -19,7 +19,7 @@ export function createFluidSimulation({ resolution = 128, bounds = 176, radius =
     const r=Math.hypot(a,b),angle=Math.atan2(b,a);
     const h=state.opening*(1+.014*Math.sin(angle*2+state.time*.9)+.006*Math.sin(angle*3-state.time*.7));
     const h2=h*h,L2=state.influence*state.influence;
-    // Forward transport is r²=s²+h² exp(-s²/L²). Its inverse is monotone,
+    // forward transport is r²=s²+h² exp(-s²/l²). its inverse is monotone,
     // with empty space only where no source material can map to the destination.
     let z=Math.max(0,r*r-h2);
     for(let k=0;k<4;k++) {
@@ -52,7 +52,7 @@ export function createFluidSimulation({ resolution = 128, bounds = 176, radius =
     if(Math.hypot(x,y)>bounds+40) strength=0;
     const dt=clamp(Number(delta)||0,0,.06);
     state.time=Number.isFinite(motionTime)?motionTime:state.time+dt;
-    // Position is exact. Only opening size and small motion squash have inertia.
+    // position is exact. only opening size and small motion squash have inertia.
     if(strength>.001) {state.x=x;state.y=y;}
     const target=28*strength;
     const blend=1-Math.exp(-dt*(target>state.opening?72:27));
@@ -68,7 +68,7 @@ export function createFluidSimulation({ resolution = 128, bounds = 176, radius =
     dirty=true;
   }
 
-  // The forward mapping also moves the exterior horizon for the fallback corona.
+  // the forward mapping also moves the exterior horizon for the fallback corona.
   function displacePoint(x,y) {
     const dx=x-state.x,dy=y-state.y;
     const a=(dx*state.dx+dy*state.dy)/state.stretch;

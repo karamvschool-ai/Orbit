@@ -15,7 +15,7 @@ async function load() {
  }
  return model;
 }
-// Serialize synthesis so cancelled playback cannot make the next request fail as busy.
+// serialize synthesis so cancelled playback cannot make the next request fail as busy.
 let queue=Promise.resolve();
 parentPort.on('message',message=> {
  queue=queue.catch(()=>{}).then(async()=> {

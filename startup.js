@@ -5,7 +5,7 @@ const ease = (time, start, duration) => {
   return t * t * t * (t * (t * 6 - 15) + 10);
 };
 
-// Projected disk orbits bend into the upper and lower lensed arcs near the core.
+// projected disk orbits bend into the upper and lower lensed arcs near the core.
 const accretionPoint = (angle, index) => {
   const x = Math.cos(angle) * (365 + index * 3.1);
   const side = Math.sin(angle);
@@ -55,8 +55,8 @@ export function playStartup(app) {
   };
   const render = () => {
     if (finished) return;
-    // Every visual samples the same decoded-media clock. Buffering pauses the
-    // entire composition instead of letting CSS run ahead of the black hole.
+    // every visual samples the same decoded-media clock. buffering pauses the
+    // entire composition instead of letting css run ahead of the black hole.
     elapsed = Math.max(elapsed, video.currentTime - mediaStart);
     const time = elapsed * 6.3 / mediaSpan;
     const trace = ease(time, .2, 1.65);
@@ -71,7 +71,7 @@ export function playStartup(app) {
       trail.style.strokeDashoffset = String(.1 - trace * 1.2);
       trail.style.opacity = String(trailOpacity * .7);
     }
-    // Rim echoes carry the same arrival energy into the disk's lensing pulse.
+    // rim echoes carry the same arrival energy into the disk's lensing pulse.
     const ignition = ease(time, 1.85, .55) * (1 - ease(time, 2.75, .8));
     for (let i=0; i<echoes.length; i++) {
       const ring=echoes[i];
@@ -102,7 +102,7 @@ export function playStartup(app) {
       filament.node.style.opacity=String(visibility*(i%3===0?.85:.38));
       filament.node.style.strokeWidth=String(.6+settle*(i%3===0?1.1:.35));
     }
-    // The converged ribbons expose corresponding parts of the real disk. Their
+    // the converged ribbons expose corresponding parts of the real disk. their
     // thickness builds in place; there is no sweep, side opening, or global fade.
     const deposit=ease(time,2.35,.9);
     const videoWidth=112*8.667;
@@ -123,8 +123,8 @@ export function playStartup(app) {
       letter.style.clipPath=`inset(${(1-reveal)*50}% 0 ${(1-reveal)*50}% 0)`;
     }
     const farthest = Math.hypot(Math.max(layout.x, innerWidth-layout.x), Math.max(layout.y, innerHeight-layout.y));
-    // The darkness recedes toward the fixed core while the disk collapses into
-    // its rim. Keep the footage separate so the page reveal cannot cut it off.
+    // the darkness recedes toward the fixed core while the disk collapses into
+    // its rim. keep the footage separate so the page reveal cannot cut it off.
     const radius = (farthest + 150) * (1-handoff) + 112 * layout.scale * handoff;
     const feather = 100 + handoff * 70;
     const mask = `radial-gradient(circle at ${layout.x}px ${layout.y}px, #000 ${Math.max(0,radius-feather)}px, rgba(0,0,0,.5) ${radius}px, transparent ${radius+feather}px)`;
@@ -161,7 +161,7 @@ export function playStartup(app) {
   const field = document.createElementNS(ns, 'svg');
   field.setAttribute('viewBox', '-520 -320 1040 640');
   field.classList.add('startup-currents');
-  // A real circular exclusion zone absorbs incoming strokes at the rim.
+  // a real circular exclusion zone absorbs incoming strokes at the rim.
   const defs = document.createElementNS(ns, 'defs');
   const gradient = document.createElementNS(ns, 'radialGradient');
   gradient.setAttribute('id', 'startup-rim-gradient');

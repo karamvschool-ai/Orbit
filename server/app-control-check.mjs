@@ -4,7 +4,7 @@ import {computerAction} from './platform.mjs';
 export async function testTextEditControl(store,{control=appControl,computer=computerAction,wait=pause,platform=process.platform}={}) {
  if(!store.config.appControl)throw Error('Enable Allow app interaction first.');
  if(platform!=='darwin')throw Error('This local TextEdit test is available on macOS.');
- // The local diagnostic checks the OS operation itself, not only its cached preflight flag.
+ // the local diagnostic checks the os operation itself, not only its cached preflight flag.
  const app='TextEdit',text='Orbit app control works. This is an unsaved local test document.';
  await computer('open_app',{name:app});await wait(250);
  let snapshot=await control('inspect',{app});

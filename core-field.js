@@ -55,7 +55,7 @@ export function createCoreField({radius=112}={}) {
         float fill=smoothstep(fillLine-1.2,fillLine+1.2,material.y);
         black*=mix(1.,fill,clamp(u_thinking,0.,1.));
         float r=length(world),angle=atan(world.y,world.x);
-        // A stable bright side belongs to the light flow, never to the black body.
+        // a stable bright side belongs to the light flow, never to the black body.
         float bright=pow(.5+.5*cos(angle+2.35),4.5);
         float listenWave=.5+.5*sin(u_time*3.2);
         float intensity=1.+u_listening*(.12+.24*listenWave)+u_thinking*.14+clamp(u_energy,0.,1.)*.09;
@@ -67,8 +67,8 @@ export function createCoreField({radius=112}={}) {
         float secondary=exp(-pow((outerSdf-5.6-lightRipple*.55)/.52,2.))*(.05+.58*bright)*arcBreak;
         float tertiary=exp(-pow((outerSdf-9.3-lightRipple*.35)/.44,2.))*(.018+.40*bright)*arcBreak;
         float outerArc=exp(-pow((outerSdf-16.-lightRipple*.25)/.38,2.))*(.008+.25*bright)*arcBreak;
-        // More and longer currents move along separate layers, with fixed rates.
-        // State acceleration comes from the already accumulated scene phase.
+        // more and longer currents move along separate layers, with fixed rates.
+        // state acceleration comes from the already accumulated scene phase.
         float streak=lightStreak(angle,u_time*.54+1.3,outerSdf,1.35,.34,.14)*.86+
           lightStreak(angle,u_time*.41-1.9,outerSdf,3.15,.43,.19)*.62+
           lightStreak(angle,u_time*.64+3.6,outerSdf,5.6,.48,.20)*.95+
@@ -76,7 +76,7 @@ export function createCoreField({radius=112}={}) {
           lightStreak(angle,u_time*.47+2.2,outerSdf,16.,.47,.26)*.73+
           lightStreak(angle,u_time*.28-2.7,outerSdf,21.6,.54,.28)*.61;
         streak*=.16+.84*bright;
-        // Contrast sits in distinct thin layers; there is no broad spherical bevel.
+        // contrast sits in distinct thin layers; there is no broad spherical bevel.
         float shoulder=exp(-pow((outerSdf-3.8-lightRipple*.65)/1.10,2.))*(.018+.58*bright);
         shoulder+=exp(-pow((outerSdf-6.7)/.65,2.))*(.016+.23*bright)*arcBreak;
         shoulder+=exp(-pow((outerSdf-10.4)/.64,2.))*(.009+.18*bright)*arcBreak;
@@ -84,7 +84,7 @@ export function createCoreField({radius=112}={}) {
         float exterior=smoothstep(u_radius-1.,u_radius+.6,r);
         float white=clamp(primary+soft*(1.-primary)+secondary+tertiary+outerArc+streak,0.,1.)*exterior;
         float shade=shoulder*exterior;
-        // Two staggered, broken photon echoes expand beyond the fixed horizon.
+        // two staggered, broken photon echoes expand beyond the fixed horizon.
         for(int k=0;k<2;k++) {
           float progress=fract(u_time*.24+float(k)*.5);
           float envelope=pow(max(0.,sin(progress*3.14159265)),.85);
@@ -147,8 +147,8 @@ export function createCoreField({radius=112}={}) {
     } catch {releaseGL();}
   }
 
-  // Canvas fallback renders the same transported density, with an exterior-only
-  // corona underneath it. Shader compilation failure therefore keeps the effect.
+  // canvas fallback renders the same transported density, with an exterior-only
+  // corona underneath it. shader compilation failure therefore keeps the effect.
   const fallback=document.createElement('canvas');fallback.width=fallback.height=SIZE;
   const ctx=fallback.getContext('2d');
   const grid=document.createElement('canvas');grid.width=grid.height=fluid.resolution;
@@ -194,14 +194,14 @@ export function createCoreField({radius=112}={}) {
         }
         return gradient;
       };
-      // Primary remains sharp; separated graphite supports reveal the white light.
+      // primary remains sharp; separated graphite supports reveal the white light.
       contour(3.8,state.time);ctx.strokeStyle=lightGradient(.018,.598,'56,63,67');ctx.lineWidth=1.80;
       ctx.shadowColor='rgba(65,72,75,.07)';ctx.shadowBlur=1.2;ctx.stroke();
       contour(1.55,state.time);ctx.strokeStyle=lightGradient(.020,.135*intensity);ctx.lineWidth=2.55;
       ctx.shadowColor='rgba(255,255,255,.13)';ctx.shadowBlur=1.9;ctx.stroke();
       contour(1.55,state.time);ctx.strokeStyle=lightGradient(.12,intensity);ctx.lineWidth=1.03;
       ctx.shadowBlur=0;ctx.stroke();
-      // Draw each secondary image in angular segments so its edge breaks naturally.
+      // draw each secondary image in angular segments so its edge breaks naturally.
       for(const [offset,width,low,high,dark]of[[5.6,.87,.05,.63,.246],[9.3,.74,.018,.418,.189],[16,.64,.008,.258,.11]]) {
         const graphite=lightGradient(.01,dark,'56,63,67',radius+offset+4);
         const photon=lightGradient(low,high,'255,255,255',radius+offset+4);

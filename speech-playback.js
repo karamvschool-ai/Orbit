@@ -21,7 +21,7 @@ export function createSpeechPlayer({onLevel=()=>{},onState=()=>{},request}) {
   try {
    for(let i=0;i<chunks.length;i++) {
     const buffer=await ready;if(token!==generation)return;
-    // Synthesize the next phrase while the current phrase is playing.
+    // synthesize the next phrase while the current phrase is playing.
     ready=i+1<chunks.length?prepare(chunks[i+1]):null;
     if(ready)ready.catch(()=>{});
     const node=context.createBufferSource(), analyser=context.createAnalyser();analyser.fftSize=512;analyser.smoothingTimeConstant=.55;
