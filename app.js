@@ -76,7 +76,7 @@ for (const node of [$('.request-island'), $('.response-island'), $('#composer'),
   });
 }
 
-// Light follows the cursor only within a glass surface, without moving its content.
+// light follows the cursor only within a glass surface, without moving its content.
 let lightFrame = 0;
 let lightSurface = null;
 let lightPosition = null;

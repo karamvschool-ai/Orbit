@@ -47,7 +47,7 @@ app.whenReady().then(async()=> {
    const {validateState}=await import('../server/store.mjs');
    validateState(JSON.parse(await fs.readFile(path.join(source,'state.json'),'utf8')));
    if(source===data)throw Error('Choose a different source folder.');
-   // Preserve current app data as a recoverable backup before importing.
+   // preserve current app data as a recoverable backup before importing.
    const backup=data+'-backup-'+Date.now();await fs.cp(data,backup,{recursive:true});
    quitting=true;engine.kill();await fs.cp(source,data,{recursive:true});await fs.chmod(path.join(data,'config.json'),0o600).catch(()=>{});
    app.relaunch();app.quit();

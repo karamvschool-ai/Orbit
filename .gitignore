@@ -11,7 +11,7 @@ releases/
 
 native/orbit-accessibility
 
-# Private configuration, exports, and signing material
+# private configuration, exports, and signing material
 .orbit-data*/
 *.log
 *.sqlite
@@ -23,7 +23,7 @@ native/orbit-accessibility
 *.pfx
 .npmrc
 
-# Built installers belong in release assets, never source commits
+# built installers belong in release assets, never source commits
 *.dmg
 *.exe
 *.blockmap

@@ -234,7 +234,7 @@ kbd { font: inherit; background: #eaeaec; border-radius: 4px; padding: 3px 6px; 
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 
-/* Quick views keep their small footprint; expansion opens a complete workspace. */
+/* quick views keep their small footprint; expansion opens a complete workspace. */
 .panel-heading { min-width: 0; }
 .panel-heading h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel-eyebrow { display: block; color: #727278; font-size: 11px; line-height: 1.4; margin-bottom: 4px; }
@@ -420,7 +420,7 @@ kbd { font: inherit; background: #eaeaec; border-radius: 4px; padding: 3px 6px; 
   .settings-preview { min-height: 230px; }
 }
 
-/* Light belongs to the glass, while the content stays still and readable. */
+/* light belongs to the glass, while the content stays still and readable. */
 :is(.request-island, .response-island, .composer, .task-panel) {
   --glass-light: 0;
   background-image:
@@ -460,7 +460,7 @@ kbd { font: inherit; background: #eaeaec; border-radius: 4px; padding: 3px 6px; 
   .task-row:active .task-copy { translate: 0 1px; }
 }
 
-/* Assistant states share the same quiet light, with one purposeful change at a time. */
+/* assistant states share the same quiet light, with one purposeful change at a time. */
 .response-avatar { position: relative; }
 .response-avatar::after {
   content: ''; position: absolute; inset: -5px; border: 1px solid rgba(90,93,110,.2);
@@ -502,7 +502,7 @@ kbd { font: inherit; background: #eaeaec; border-radius: 4px; padding: 3px 6px; 
   .orbit-app .task-row:active .task-copy { translate: none; }
 }
 
-/* One media-clock composition: trace → disk → lettering → feathered handoff. */
+/* one media-clock composition: trace → disk → lettering → feathered handoff. */
 #startup { overflow: hidden; pointer-events: none; background: transparent; }
 .startup-backdrop { position: absolute; inset: 0; background: #000; z-index: 0; }
 .startup-position { position: absolute; left: var(--intro-x,49.5vw); top: var(--intro-y,46vh); width: 0; height: 0; z-index: 1; mix-blend-mode: screen; }
@@ -520,7 +520,7 @@ kbd { font: inherit; background: #eaeaec; border-radius: 4px; padding: 3px 6px; 
 .startup-wordmark { color: #fff; text-shadow: 0 0 2px #000, 0 0 7px #000; opacity: 0; z-index: 2; }
 @media (prefers-reduced-motion: reduce) { #startup { display: none; } html.is-starting .orbit-app { opacity: 1; } }
 
-/* Real assistant surfaces */
+/* real assistant surfaces */
 #current-request, #current-response { overflow-wrap: anywhere; }
 #current-response { max-height: 135px; overflow-y: auto; scrollbar-width: thin; white-space: pre-wrap; }
 .thread-message p { white-space: pre-wrap; overflow-wrap: anywhere; }

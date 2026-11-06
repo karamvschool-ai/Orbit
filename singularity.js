@@ -1,4 +1,4 @@
-/* Orbit's singularity combines animated geometry with shaded orbital sprites. */
+/* orbit's singularity combines animated geometry with shaded orbital sprites. */
 import { createCoreField } from './core-field.js';
 import { sceneLayout } from './scene-layout.js';
 const TAU = Math.PI * 2;
@@ -30,7 +30,7 @@ function sampleCurve(points, t) {
   return [component(0), component(1)];
 }
 
-// Refract the actual rendered strands, rather than drawing another wire ring.
+// refract the actual rendered strands, rather than drawing another wire ring.
 function createRefractionPass() {
   const source=document.createElement('canvas'),output=document.createElement('canvas');
   source.width=source.height=output.width=output.height=384;
@@ -184,8 +184,8 @@ export function createSingularity(canvas, { getEnergy = () => 0, getSpeechLevel 
   }
   function onLeave() { pointer.targetPresence = 0; invalidate(); }
 
-  // The rim and nearby plotted geometry share the core's material transport.
-  // A broader, weaker field carries that displacement into the distant ribbons.
+  // the rim and nearby plotted geometry share the core's material transport.
+  // a broader, weaker field carries that displacement into the distant ribbons.
   function warp(x, y, strength = 1, out = scratch) {
     if (pointer.presence < .001) { out[0] = x; out[1] = y; return out; }
     const material = coreField.displacePoint(x, y);
@@ -199,7 +199,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getSpeechLevel 
     out[1] = y + (material[1] - y) * connection + dy * pull + dx * influence * .035;
     return out;
   }
-  // A permanent lens bends the distant scene first; cursor transport then acts
+  // a permanent lens bends the distant scene first; cursor transport then acts
   // on that apparent position, so the two fields never fight over the same ray.
   function lensPoint(x, y, strength = 1, out = scratch) {
     const radius = Math.hypot(x,y);
@@ -277,7 +277,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getSpeechLevel 
     const sampleStep = width <= 600 ? 2 : 1;
     for (let n=0;n<ribbons.length;n++) {
       const ribbon = ribbons[n], s = ribbon.surface, major = ribbon.major;
-      // Reuse a fixed geometry buffer; all strands share coherent surface folds.
+      // reuse a fixed geometry buffer; all strands share coherent surface folds.
       for (let j=0;j<88;j++) {
         const base=ribbon.samples[j], t=j/87, i=j*12;
         const before=ribbon.samples[Math.max(0,j-1)], after=ribbon.samples[Math.min(87,j+1)];
@@ -304,7 +304,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getSpeechLevel 
         let q=ribbonEdge(ribbon,j,-1);s[i+8]=q[0];s[i+9]=q[1];
         q=ribbonEdge(ribbon,j,1);s[i+10]=q[0];s[i+11]=q[1];
       }
-      // Continuous width bands describe the folded surface without quad seams.
+      // continuous width bands describe the folded surface without quad seams.
       const bands=width<=600?(major?5:3):(major?7:5);
       const tones=[[184,189,192,.025],[151,158,162,.075],[102,111,116,.20],
         [43,50,56,.33],[29,35,39,.49],[249,250,251,.45],[245,247,249,.06]];
@@ -383,8 +383,8 @@ export function createSingularity(canvas, { getEnergy = () => 0, getSpeechLevel 
     const radius=195+track*4.3;
     const shear=Math.sin(angle*4-time*(1.55-track*.025)+track*.63)*1.25*depth;
     const x=cos*radius;
-    // The rear plane appears again above the shadow; its near-side image is
-    // compressed below it. Both are drawn before the core masks the scene.
+    // the rear plane appears again above the shadow; its near-side image is
+    // compressed below it. both are drawn before the core masks the scene.
     const y=sin*(rear?57:39)+(rear?-77:67)*depth**1.7+track*(rear?2.4:1.4)+shear;
     const cosine=Math.cos(DISK_TILT),sine=Math.sin(DISK_TILT);
     const lensed=lensPoint(x*cosine-y*sine,x*sine+y*cosine,.93,out);
@@ -394,7 +394,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getSpeechLevel 
   }
   function drawAccretion(time) {
     const count=width<=600?54:86;
-    // Continuous nested skins form a single folded volume. Light veins sit on it.
+    // continuous nested skins form a single folded volume. light veins sit on it.
     const skins=[['47,53,58',.12],['47,53,58',.26],['27,32,36',.40],['255,255,255',.71],['82,90,95',.22],['255,255,255',.19]];
     for(const rear of [true,false]) {
       const start=rear?Math.PI:0,tracks=rear?7:4;
@@ -460,7 +460,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getSpeechLevel 
       light.addColorStop(1,`rgba(255,255,255,${.68+bright*.28})`);
       ctx.lineWidth=1.05;ctx.strokeStyle=light;ctx.stroke();
     }
-    // Broken expanding arcs cross the negative space without outlining a globe.
+    // broken expanding arcs cross the negative space without outlining a globe.
     for(let wave=0;wave<2;wave++) {
       const progress=(time*.13+wave*.5)%1,radius=180+progress**1.08*205;
       const alpha=Math.sin(progress*Math.PI)*.16;
@@ -483,7 +483,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getSpeechLevel 
       ctx.strokeStyle = `rgba(96,101,105,${ring % 3 === 0 ? .095 : .048})`;
       ctx.stroke();
     }
-    // Inclined orbital ellipses bring a scientific wire-frame quality to the halo.
+    // inclined orbital ellipses bring a scientific wire-frame quality to the halo.
     for (let i = 0; i < 3; i++) {
       traceOrbit(195-i*6,73+i*12,i*.47+.2+time*.024,.2,TAU-.26);
       ctx.strokeStyle = `rgba(109,113,117,${i % 2 ? .035 : .055})`;
@@ -582,7 +582,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getSpeechLevel 
     energy=mix(energy,clamp(Number(getEnergy())||0,0,1),1-Math.exp(-delta/.075));
     visual.listening=stateMix.listening+voiceLevel*.8;visual.thinking=stateMix.thinking;visual.progress=fillProgress;
     visual.completeProgress=completeAge<1.25?completeAge/1.25:-1;
-    // Advance transport once, before any geometry samples its shared displacement.
+    // advance transport once, before any geometry samples its shared displacement.
     const surface=coreField.render(pointer,pressStrength,energy,delta,phase,visual);
     ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
     ctx.translate(centerX,centerY);ctx.scale(scale,scale);
@@ -597,7 +597,7 @@ export function createSingularity(canvas, { getEnergy = () => 0, getSpeechLevel 
       position.y=x*Math.sin(satellite.tilt)+y*Math.cos(satellite.tilt);
       position.depth=Math.sin(angle);position.r=satellite.radius*(.94+position.depth*.14);
     }
-    // Small visual separation prevents different orbital periods overlapping.
+    // small visual separation prevents different orbital periods overlapping.
     for(let a=0;a<3;a++)for(let b=a+1;b<3;b++) {
       const p=satellitePositions[a],q=satellitePositions[b],dx=q.x-p.x,dy=q.y-p.y,d=Math.hypot(dx,dy);
       if(d>0&&d<29){const push=(29-d)*.5/d;p.x-=dx*push;p.y-=dy*push;q.x+=dx*push;q.y+=dy*push;}

@@ -1,4 +1,4 @@
-// Offline request-size comparison. No Groq calls or real computer actions.
+// offline request-size comparison. no groq calls or real computer actions.
 import {mkdtemp,mkdir,writeFile,symlink,readdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';

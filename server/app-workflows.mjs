@@ -75,7 +75,7 @@ export async function startNewChat({app},{control=appControl,signal}={}) {
  const observation=await control('inspect',{app});
  const fields=observation.elements.filter(composer);
  const valueLooksEmpty=row=>!row.value?.trim() || row.value===row.placeholder;
- // Fail closed if the destination still contains a draft or a prior conversation.
+ // fail closed if the destination still contains a draft or a prior conversation.
  const oldConversation=observation.elements.some(row=>/^(?:user message|assistant message|you said|chatgpt said)/i.test(row.label||''));
  const content=state=>state.elements.filter(row=>!row.editable&&!row.actions?.length&&/text|heading/i.test(row.role)).map(row=>row.label+' '+row.value).join('|');
  const welcome=observation.elements.some(row=>!pressable(row)&&/what (?:can|would|do)|how can .*help|start a (?:new )?(?:chat|conversation)|new conversation/i.test(row.label+' '+row.value));
@@ -110,7 +110,7 @@ export async function playSpotifyPlaylist({name},{control=appControl,computer=co
    if(player.state==='playing')return {playlist:name,verified:true,player,note:'The requested playlist already has its Pause control and playback is active.'};
   }
   observation=await observe(name);
-  // Named playlist button is required; never substitute the bottom player's Play.
+  // named playlist button is required; never substitute the bottom player's play.
   const starts=observation.elements.filter(row=>pressable(row)&&normalize(row.label)==='play '+requested&&!/song|now playing|player controls/i.test(row.context||''));
   if(starts.length===1) {
    await press(observation,starts[0]);

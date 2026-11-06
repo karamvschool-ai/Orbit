@@ -50,7 +50,7 @@ public class OrbitVolume {
  if ($action -eq 'get_volume') { Emit ([OrbitVolume]::Get()) } else { [OrbitVolume]::Set([int]$argsData.volume); Emit @{volume=$argsData.volume} }
  exit
 }
-# Use the requested player's Windows media session, never global media keys.
+# use the requested player's windows media session, never global media keys.
 if ($action -eq 'media_control') {
  Add-Type -AssemblyName System.Runtime.WindowsRuntime
  $null=[Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager,Windows.Media.Control,ContentType=WindowsRuntime]

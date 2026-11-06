@@ -27,7 +27,7 @@ export function toolsForRequest(definitions,text) {
  if(/app|open|launch|click|type|browser|website|chat|prompt|send|message|profile|friend|spotify|music|play|inspect|textedit|search/i.test(text))['list_apps','open_app','open_url','inspect_app','app_act','app_search'].forEach(n=>names.add(n));
  if(requestIntent(text).newChat||/prompt|chatgpt|codex/i.test(text))names.add('start_new_chat');
  if(requestIntent(text).directMessage)names.add('send_direct_message');
- // Ordinary questions need no computer/file/scheduling schemas.
+ // ordinary questions need no computer/file/scheduling schemas.
  if(!names.size&&/^(?:do it|go ahead|try again)\b/i.test(text))['list_apps','list_files','list_tasks','set_volume'].forEach(n=>names.add(n));
  return definitions.filter(d=>names.has(d.function.name));
 }

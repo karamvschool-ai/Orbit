@@ -24,7 +24,7 @@ func handle(_ request:[String:Any]) throws -> [String:Any] {
   app.activate(options:[])
   let root=AXUIElementCreateApplication(app.processIdentifier)
   AXUIElementSetMessagingTimeout(root,2)
-  // Chromium/Electron expose their semantic tree when accessibility is requested.
+  // chromium/electron expose their semantic tree when accessibility is requested.
   AXUIElementSetAttributeValue(root,"AXManualAccessibility" as CFString,kCFBooleanTrue)
   AXUIElementSetAttributeValue(root,"AXEnhancedUserInterface" as CFString,kCFBooleanTrue)
   for window in ((attr(root,kAXWindowsAttribute) as? [AXUIElement]) ?? []) {AXUIElementSetAttributeValue(window,"AXEnhancedUserInterface" as CFString,kCFBooleanTrue)}
