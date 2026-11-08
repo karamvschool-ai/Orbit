@@ -4,31 +4,50 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const smooth = value => value * value * (3 - 2 * value);
 
 export function createFluidSimulation({ resolution = 128, bounds = 176, radius = 112 } = {}) {
-  const n = clamp(Math.round(Number(resolution) || 128),32,256);
-  bounds = Math.max(16,Number(bounds) || 176);
-  radius = clamp(Number(radius) || 112,4,bounds*.88);
-  const cell = bounds*2/(n-1), density = new Float32Array(n*n);
+  const n = clamp(Math.round(Number(resolution) || 128), 32, 256);
+  bounds = Math.max(16, Number(bounds) || 176);
+  radius = clamp(Number(radius) || 112, 4, bounds * 0.88);
+  const cell = bounds * 2 / (n - 1);
+  const density = new Float32Array(n * n);
   const state = { x: 0, y: 0, opening: 0, stretch: 1, dx: 1, dy: 0, time: 0, influence: 48, radius };
-  let previousX=0,previousY=0,previousStrength=0,disposed=false,dirty=false;
+  let previousX = 0;
+  let previousY = 0;
+  let previousStrength = 0;
+  let disposed = false;
+  let dirty = false;
 
-  function sourcePoint(x,y) {
-    if (state.opening<.001) return [x,y,1e3];
-    const dx=x-state.x,dy=y-state.y;
-    const a=(dx*state.dx+dy*state.dy)/state.stretch;
-    const b=(-dx*state.dy+dy*state.dx)*state.stretch;
-    const r=Math.hypot(a,b),angle=Math.atan2(b,a);
-    const h=state.opening*(1+.014*Math.sin(angle*2+state.time*.9)+.006*Math.sin(angle*3-state.time*.7));
-    const h2=h*h,L2=state.influence*state.influence;
-    // forward transport is r²=s²+h² exp(-s²/l²). its inverse is monotone,
-    // with empty space only where no source material can map to the destination.
-    let z=Math.max(0,r*r-h2);
-    for(let k=0;k<4;k++) {
-      const exponential=Math.exp(-z/L2);
-      z=Math.max(0,z-(z+h2*exponential-r*r)/(1-h2/L2*exponential));
+  function sourcePoint(x, y) {
+    if (state.opening < 0.001) return [x, y, 1000];
+
+    const dx = x - state.x;
+    const dy = y - state.y;
+    const a = (dx * state.dx + dy * state.dy) / state.stretch;
+    const b = (-dx * state.dy + dy * state.dx) * state.stretch;
+    const distance = Math.hypot(a, b);
+    const angle = Math.atan2(b, a);
+    const opening = state.opening * (1 + 0.014 * Math.sin(angle * 2 + state.time * 0.9) +
+      0.006 * Math.sin(angle * 3 - state.time * 0.7));
+    const opening_squared = opening * opening;
+    const range_squared = state.influence * state.influence;
+    const distance_squared = distance * distance;
+
+    // work backward from the cursor to find where the black surface came from.
+    let source_squared = Math.max(0, distance_squared - opening_squared);
+    for (let i = 0; i < 4; i++) {
+      const falloff = Math.exp(-source_squared / range_squared);
+      const error = source_squared + opening_squared * falloff - distance_squared;
+      const slope = 1 - opening_squared / range_squared * falloff;
+      source_squared = Math.max(0, source_squared - error / slope);
     }
-    const factor=Math.sqrt(z)/Math.max(r,.0001);
-    const sa=a*factor*state.stretch,sb=b*factor/state.stretch;
-    return [state.x+sa*state.dx-sb*state.dy,state.y+sa*state.dy+sb*state.dx,r-h];
+
+    const scale = Math.sqrt(source_squared) / Math.max(distance, 0.0001);
+    const sa = a * scale * state.stretch;
+    const sb = b * scale / state.stretch;
+    return [
+      state.x + sa * state.dx - sb * state.dy,
+      state.y + sa * state.dy + sb * state.dx,
+      distance - opening,
+    ];
   }
 
   function signedDistance(x,y) {

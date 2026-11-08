@@ -1,21 +1,32 @@
 import { createFluidSimulation } from './fluid-simulation.js';
 
-const BOUNDS=176,SIZE=BOUNDS*4;
-const TAU=Math.PI*2;
+const BOUNDS = 176;
+const SIZE = BOUNDS * 4;
+const TAU = Math.PI * 2;
 
-export function createCoreField({radius=112}={}) {
-  const fluid=createFluidSimulation({resolution:160,bounds:BOUNDS,radius});
-  const canvas=document.createElement('canvas');
-  canvas.width=canvas.height=SIZE;
-  const gl=canvas.getContext('webgl',{alpha:true,premultipliedAlpha:false,antialias:false,depth:false,preserveDrawingBuffer:true});
-  const resources={shaders:[],program:null,buffer:null};
+export function createCoreField({ radius = 112 } = {}) {
+  const fluid = createFluidSimulation({ resolution: 160, bounds: BOUNDS, radius });
+  const canvas = document.createElement('canvas');
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+
+  const gl = canvas.getContext('webgl', {
+    alpha: true,
+    premultipliedAlpha: false,
+    antialias: false,
+    depth: false,
+    preserveDrawingBuffer: true,
+  });
+  const resources = { shaders: [], program: null, buffer: null };
+
   function releaseGL() {
-    if(!gl)return;
-    if(resources.buffer)gl.deleteBuffer(resources.buffer);
-    resources.shaders.forEach(shader=>gl.deleteShader(shader));
-    if(resources.program)gl.deleteProgram(resources.program);
+    if (!gl) return;
+    if (resources.buffer) gl.deleteBuffer(resources.buffer);
+    for (const shader of resources.shaders) gl.deleteShader(shader);
+    if (resources.program) gl.deleteProgram(resources.program);
   }
-  if(gl) {
+
+  if (gl) {
     const vertex=`attribute vec2 a_position;varying vec2 v_uv;
       void main(){v_uv=a_position*.5+.5;gl_Position=vec4(a_position,0.,1.);}`;
     const fragment=`precision mediump float;
