@@ -4,17 +4,27 @@ import DOMPurify from '/vendor/purify.js';
 import { createSingularity } from './singularity.js';
 import { playStartup } from './startup.js';
 
-const $ = (selector) => document.querySelector(selector);
-const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-const settings = { motion: true, interaction: true, speech: true };
+function $(selector) {
+  return document.querySelector(selector);
+}
+
+// screen preferences
 const app = $('.orbit-app');
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
+const mobileQuery = matchMedia('(max-width: 900px)');
+const compactInputQuery = matchMedia('(max-width: 550px)');
+const settings = { motion: true, interaction: true, speech: true };
+
+// current activity
 let energy = 0;
-let speechLevel = 0, taskProgress = 1;
-let voicePreview = false;
+let speechLevel = 0;
+let taskProgress = 1;
 let assistantState = 'idle';
 let settleTimer;
 let toastTimer;
+
+// panels and saved items
 let attachedFiles = [];
 let activePopover = null;
 let panelInvoker = null;
@@ -24,15 +34,22 @@ let conversationQuery = '';
 let fileQuery = '';
 let selectedConversation = 'Make me a summary of my research notes.';
 const overlays = [];
-const mobileQuery = matchMedia('(max-width: 900px)');
-const compactInputQuery = matchMedia('(max-width: 550px)');
 let tasksOpen = !mobileQuery.matches;
 const conversations = [];
 let savedFiles = [];
 let runtime = null;
 let currentChatId = null;
 let requesting = false;
-let recorder, microphone, recordingTimer, recordingChunks = [], recordingCancelled = false, microphonePending = false;
+
+// microphone recording
+let voicePreview = false;
+let recorder;
+let microphone;
+let recordingTimer;
+let recordingChunks = [];
+let recordingCancelled = false;
+let microphonePending = false;
+
 const scene = createSingularity($('#singularity'), {
   getEnergy: () => energy,
   getSpeechLevel: () => speechLevel,
@@ -40,7 +57,7 @@ const scene = createSingularity($('#singularity'), {
   getMotion: () => settings.motion && !reducedMotion.matches,
   getInteraction: () => settings.interaction && !pageExpanded,
   getState: () => assistantState,
-  onLight: (strength,position) => {
+  onLight: (strength, position) => {
     app.style.setProperty('--scene-reflection', strength.toFixed(3));
     app.style.setProperty('--scene-light-position', `${position.toFixed(1)}%`);
   },

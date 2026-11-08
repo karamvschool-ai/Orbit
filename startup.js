@@ -1,27 +1,46 @@
 import { sceneLayout } from './scene-layout.js';
 
-const ease = (time, start, duration) => {
-  const t = Math.max(0, Math.min(1, (time - start) / duration));
+function ease(time, start, duration) {
+  const progress = (time - start) / duration;
+  const t = Math.max(0, Math.min(1, progress));
   return t * t * t * (t * (t * 6 - 15) + 10);
-};
+}
 
 // projected disk orbits bend into the upper and lower lensed arcs near the core.
-const accretionPoint = (angle, index) => {
+function accretionPoint(angle, index) {
   const x = Math.cos(angle) * (365 + index * 3.1);
   const side = Math.sin(angle);
-  const lens = index < 18 ? Math.exp(-Math.pow(x / 164, 2)) *
-    (side < 0 ? 156 : 122) * Math.pow(Math.abs(side), .7) : 0;
-  return [x, side * (17 + index * .65) + Math.sign(side) * lens];
-};
-const pointsPath = (points, closed=true) => points.map(([x,y],i)=>`${i?'L':'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ')+(closed?' Z':'');
+  let lens = 0;
+  if (index < 18) {
+    const height = side < 0 ? 156 : 122;
+    lens = Math.exp(-Math.pow(x / 164, 2)) * height * Math.pow(Math.abs(side), 0.7);
+  }
+  const y = side * (17 + index * 0.65) + Math.sign(side) * lens;
+  return [x, y];
+}
+
+function pointsPath(points, closed = true) {
+  const segments = points.map(([x, y], index) => {
+    const command = index === 0 ? 'M' : 'L';
+    return `${command}${x.toFixed(2)},${y.toFixed(2)}`;
+  });
+  const path = segments.join(' ');
+  return closed ? path + ' Z' : path;
+}
 
 export function playStartup(app) {
   const overlay = document.querySelector('#startup');
   const video = overlay.querySelector('video');
   const circle = overlay.querySelector('.startup-trace circle');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  let finished = false, frame = 0, decodedFrame, mediaStart, timer, loadTimer;
-  let mediaSpan = 6.3, elapsed = 0;
+  let finished = false;
+  let frame = 0;
+  let decodedFrame;
+  let mediaStart;
+  let timer;
+  let loadTimer;
+  let mediaSpan = 6.3;
+  let elapsed = 0;
   const trails = [];
   const heads = [];
   const echoes = [];

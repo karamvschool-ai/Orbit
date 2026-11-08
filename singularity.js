@@ -10,10 +10,11 @@ const BRIGHT_ANGLE = -2.35;
 
 function randomSource(seed) {
   return () => {
-    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let value = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   };
 }
 
@@ -21,12 +22,23 @@ function sampleCurve(points, t) {
   const position = t * (points.length - 1);
   const i = Math.min(points.length - 2, Math.floor(position));
   const u = position - i;
-  const p0 = points[Math.max(0, i - 1)], p1 = points[i];
-  const p2 = points[i + 1], p3 = points[Math.min(points.length - 1, i + 2)];
-  const u2 = u * u, u3 = u2 * u;
-  const component = axis => .5 * ((2 * p1[axis]) + (-p0[axis] + p2[axis]) * u +
-    (2 * p0[axis] - 5 * p1[axis] + 4 * p2[axis] - p3[axis]) * u2 +
-    (-p0[axis] + 3 * p1[axis] - 3 * p2[axis] + p3[axis]) * u3);
+  const before = points[Math.max(0, i - 1)];
+  const start = points[i];
+  const end = points[i + 1];
+  const after = points[Math.min(points.length - 1, i + 2)];
+  const squared = u * u;
+  const cubed = squared * u;
+
+  function component(axis) {
+    const a = before[axis];
+    const b = start[axis];
+    const c = end[axis];
+    const d = after[axis];
+    return 0.5 * (2 * b + (-a + c) * u +
+      (2 * a - 5 * b + 4 * c - d) * squared +
+      (-a + 3 * b - 3 * c + d) * cubed);
+  }
+
   return [component(0), component(1)];
 }
 

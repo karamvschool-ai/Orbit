@@ -5,12 +5,14 @@ import path from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {GroqClient} from '../server/groq.mjs';
+// use the 1.2.3 source snapshot so the comparison survives commit message edits.
+const baseline = '2a0f43ffcd034bd2dbfe3b63fc2bc0f95580cfbe';
 const root=fileURLToPath(new URL('..',import.meta.url)),scratch=await mkdtemp(path.join(tmpdir(),'orbit-efficiency-'));
 try {
  const server=path.join(scratch,'server');await mkdir(server);
  for(const file of await readdir(path.join(root,'server'))){
   if(!file.endsWith('.mjs'))continue;
-  if(['groq.mjs','agent-context.mjs','tools.mjs','app-workflows.mjs'].includes(file))await writeFile(path.join(server,file),execFileSync('git',['show','045f3d2:server/'+file],{cwd:root}));
+  if(['groq.mjs','agent-context.mjs','tools.mjs','app-workflows.mjs'].includes(file))await writeFile(path.join(server,file),execFileSync('git',['show',`${baseline}:server/${file}`],{cwd:root}));
   else await symlink(path.join(root,'server',file),path.join(server,file));
  }
  const {GroqClient:Before}=await import(pathToFileURL(path.join(server,'groq.mjs')));
@@ -30,7 +32,7 @@ try {
  const cases=[['Simple question','What is the capital of France?','chat'],['Six-step app simulation','Find my friend Alex in Discord','app'],['Open app','Open Spotify','open']];
  const results=[];
  for(const [scenario,prompt,mode] of cases){const before=await measure(Before,prompt,mode),after=await measure(GroqClient,prompt,mode);results.push({scenario,before,after,inputCharacterReductionPercent:Math.round((1-after.inputCharacters/before.inputCharacters)*100)});}
- const report={measurement:'Serialized model-input characters, not provider token counts. Offline fixtures; no API calls or real app actions.',baseline:'045f3d2',results};
+ const report={measurement:'Serialized model-input characters, not provider token counts. Offline fixtures; no API calls or real app actions.',baseline,results};
  if(process.argv[2])await writeFile(process.argv[2],JSON.stringify(report,null,2));
  console.log(JSON.stringify(report,null,2));
 } finally {await rm(scratch,{recursive:true,force:true});}
